@@ -2,7 +2,8 @@
 from PyQt5.QtWidgets import (QWidget, QLineEdit, QPushButton, 
                             QHBoxLayout, QGraphicsOpacityEffect)
 from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QCursor
+from PyQt5.QtGui import QCursor, QFont
+from config import scale_factor
 
 class BubbleInput(QWidget):
     def __init__(self, parent=None, on_send=None):
@@ -20,17 +21,25 @@ class BubbleInput(QWidget):
         # 输入框
         self.input_field = QLineEdit()
         self.input_field.setPlaceholderText("对我说点什么吧...")
-        self.input_field.setMinimumWidth(250)
+        self.input_field.setMinimumWidth(int(250 * scale_factor))
+        self.input_field.setFont(QFont("Microsoft YaHei", int(12 * scale_factor)))
         
         # 发送按钮
         self.send_btn = QPushButton("发送")
         self.send_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        self.send_btn.setFont(QFont("Microsoft YaHei", int(12 * scale_factor)))
         
-        # 布局
+        # 布局（应用缩放倍率）
         layout = QHBoxLayout(self)
         layout.addWidget(self.input_field)
         layout.addWidget(self.send_btn)
-        layout.setContentsMargins(15, 10, 15, 10)
+        layout.setContentsMargins(
+            int(15 * scale_factor), 
+            int(10 * scale_factor), 
+            int(15 * scale_factor), 
+            int(10 * scale_factor)
+        )
+        layout.setSpacing(int(10 * scale_factor))
         
         # 信号连接
         self.send_btn.clicked.connect(self._on_send)
@@ -42,36 +51,36 @@ class BubbleInput(QWidget):
                 self.setStyleSheet(f.read())
         except FileNotFoundError:
             print("样式表文件未找到: src/frontend/style_sheets/bubble_input.css")
-            # 如果文件不存在，保持原始内联样式作为后备
-            self.setStyleSheet("""
-                QWidget {
+            # 如果文件不存在，保持原始内联样式作为后备（应用缩放倍率）
+            self.setStyleSheet(f"""
+                QWidget {{
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                         stop:0 #f0f8ff, stop:1 #e6f3ff);
-                    border-radius: 15px;
-                    border: 2px solid #a0d1eb;
-                }
-                QLineEdit {
+                    border-radius: {int(15 * scale_factor)}px;
+                    border: {int(2 * scale_factor)}px solid #a0d1eb;
+                }}
+                QLineEdit {{
                     background: rgba(255, 255, 255, 0.9);
-                    border: 1px solid #c0ddec;
-                    border-radius: 10px;
-                    padding: 8px;
-                    font-size: 14px;
+                    border: {int(1 * scale_factor)}px solid #c0ddec;
+                    border-radius: {int(10 * scale_factor)}px;
+                    padding: {int(8 * scale_factor)}px;
+                    font-size: {int(14 * scale_factor)}px;
                     color: #333;
-                }
-                QPushButton {
+                }}
+                QPushButton {{
                     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                         stop:0 #4CAF50, stop:1 #45a049);
                     color: white;
                     border: none;
-                    border-radius: 8px;
-                    padding: 8px 20px;
+                    border-radius: {int(8 * scale_factor)}px;
+                    padding: {int(8 * scale_factor)}px {int(20 * scale_factor)}px;
                     font-weight: bold;
-                    min-width: 60px;
-                }
-                QPushButton:hover {
+                    min-width: {int(60 * scale_factor)}px;
+                }}
+                QPushButton:hover {{
                     background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                         stop:0 #5cb860, stop:1 #4CAF50);
-                }
+                }}
             """)
 
     def init_animation(self):
@@ -113,17 +122,18 @@ class BubbleInput(QWidget):
         parent_rect = self.parent().geometry()
         screen = self.parent().screen().availableGeometry()
         
-        # 计算位置（显示在宠物下方）
+        # 计算位置（显示在宠物下方，应用缩放倍率）
         x = parent_rect.center().x() - self.width() // 2
-        y = parent_rect.bottom() + 10  # 在宠物底部下方10像素处
+        y = parent_rect.bottom() + int(10 * scale_factor)  # 在宠物底部下方
         
-        # 边界检查
-        x = max(screen.left() + 10, min(x, screen.right() - self.width() - 10))
+        # 边界检查（应用缩放倍率）
+        x = max(screen.left() + int(10 * scale_factor), 
+                min(x, screen.right() - self.width() - int(10 * scale_factor)))
         
         # 如果下方空间不足，自动调整到上方
         if y + self.height() > screen.bottom():
-            y = parent_rect.top() - self.height() - 10  # 改为显示在上方
+            y = parent_rect.top() - self.height() - int(10 * scale_factor)  # 改为显示在上方
         
-        y = max(screen.top() + 10, y)  # 确保不会超出屏幕上边界
+        y = max(screen.top() + int(10 * scale_factor), y)  # 确保不会超出屏幕上边界
         
         self.move(x, y)

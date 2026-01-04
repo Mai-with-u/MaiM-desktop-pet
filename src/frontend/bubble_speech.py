@@ -9,6 +9,7 @@ import asyncio
 from src.database import db_manager
 from src.util.logger import logger
 from src.shared.models.message import MessageBase
+from config import scale_factor
 
 if TYPE_CHECKING:
     pass
@@ -28,9 +29,9 @@ class SpeechBubble(QLabel):
         self.scaled_pixmap = None
         self.bubble_type = bubble_type  # "received" 或 "sent"
         
-            # 添加边距和间距的初始化
-        self._content_margin = 10  # 内容与气泡边缘的边距
-        self._image_text_spacing = 5  # 图片和文字之间的间距
+            # 添加边距和间距的初始化（应用缩放倍率）
+        self._content_margin = int(10 * scale_factor)  # 内容与气泡边缘的边距
+        self._image_text_spacing = int(5 * scale_factor)  # 图片和文字之间的间距
 
         # 如果有图片，创建缩略图
         if self.original_pixmap and not self.original_pixmap.isNull():
@@ -39,18 +40,18 @@ class SpeechBubble(QLabel):
         # 根据气泡类型设置不同样式
         if bubble_type == "received":
             self.bg_color = QColor(240, 248, 255)  # 爱丽丝蓝(接收气泡)
-            self.follow_offset = QPoint(-100, -30)   # 向左偏移10px
+            self.follow_offset = QPoint(int(-100 * scale_factor), int(-30 * scale_factor))   # 向左偏移
         else:
             self.bg_color = QColor(200, 255, 200)  # 浅绿色(发送气泡)
-            self.follow_offset = QPoint(100, -30)    # 向右偏移10px
+            self.follow_offset = QPoint(int(100 * scale_factor), int(-30 * scale_factor))    # 向右偏移
             
         self.text_color = QColor(70, 70, 70)   # 深灰色
-        self.setFont(QFont("Arial", 12, QFont.Bold))
-        self.corner_radius = 10
-        self.arrow_height = 10
+        self.setFont(QFont("Arial", int(12 * scale_factor), QFont.Bold))
+        self.corner_radius = int(10 * scale_factor)
+        self.arrow_height = int(10 * scale_factor)
         
         # 字体设置
-        self.setFont(QFont("Microsoft YaHei", 12))
+        self.setFont(QFont("Microsoft YaHei", int(12 * scale_factor)))
         
         # 动画组
         self.animation_group = QSequentialAnimationGroup(self)
@@ -58,8 +59,8 @@ class SpeechBubble(QLabel):
     def create_scaled_pixmap(self):
         """创建缩放后的图片缩略图"""
         try:
-            # 计算缩略图尺寸（最大250x250，保持宽高比）
-            max_size = 250
+            # 计算缩略图尺寸（最大250x250，保持宽高比，应用全局缩放倍率）
+            max_size = int(250 * scale_factor)
             width = self.original_pixmap.width()
             height = self.original_pixmap.height()
             
@@ -90,32 +91,32 @@ class SpeechBubble(QLabel):
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(body_rect, self.corner_radius, self.corner_radius)
         
-        # 绘制箭头(根据气泡类型决定方向)
+        # 绘制箭头(根据气泡类型决定方向，应用缩放倍率)
         path = QPainterPath()
-        arrow_width = 20
+        arrow_width = int(20 * scale_factor)
         if self.bubble_type == "received":
             # 接收气泡箭头在左侧
-            center_x = 30
+            center_x = int(30 * scale_factor)
         else:
             # 发送气泡箭头在右侧
-            center_x = self.width() - 30
+            center_x = self.width() - int(30 * scale_factor)
             
         path.moveTo(center_x - arrow_width//2, body_rect.height())
         path.lineTo(center_x, self.height())
         path.lineTo(center_x + arrow_width//2, body_rect.height())
         painter.drawPath(path)
         
-        # 绘制内容（图片和/或文字）
-        content_top = 5  # 顶部边距
-        left_margin = 10  # 左边距
-        right_margin = 10  # 右边距
+        # 绘制内容（图片和/或文字，应用缩放倍率）
+        content_top = int(5 * scale_factor)  # 顶部边距
+        left_margin = int(10 * scale_factor)  # 左边距
+        right_margin = int(10 * scale_factor)  # 右边距
         
         # 如果有图片，绘制图片
         if self.scaled_pixmap and not self.scaled_pixmap.isNull():
             # 图片居中显示
             img_x = (self.width() - self.scaled_pixmap.width()) // 2
             painter.drawPixmap(img_x, content_top, self.scaled_pixmap)
-            content_top += self.scaled_pixmap.height() + 5  # 图片下方留5px间距
+            content_top += self.scaled_pixmap.height() + int(5 * scale_factor)  # 图片下方留间距
         
         # 如果有文字，绘制文字
         if self.text_data:
@@ -128,10 +129,10 @@ class SpeechBubble(QLabel):
             painter.drawText(text_rect, Qt.AlignLeft | Qt.TextWordWrap, self.text_data)
 
     def calculate_bubble_size(self):
-        """计算包含图片和文字的气泡大小"""
-        # 计算文字所需大小
-        min_text_width = 100  # 最小文字宽度
-        text_width = 300  # 最大文字宽度
+        """计算包含图片和文字的气泡大小（应用缩放倍率）"""
+        # 计算文字所需大小（应用缩放倍率）
+        min_text_width = int(100 * scale_factor)  # 最小文字宽度
+        text_width = int(300 * scale_factor)  # 最大文字宽度
         text_height = 0
         
         if self.text_data:
@@ -143,12 +144,12 @@ class SpeechBubble(QLabel):
             text_height = text_rect.height()
             min_text_width = min(text_rect.width() + 2*self._content_margin, min_text_width)
         
-        # 计算图片所需大小
+        # 计算图片所需大小（应用缩放倍率）
         img_width = img_height = 0
         if self.scaled_pixmap:
-            img_width = min(300, self.scaled_pixmap.width())  # 图片最大宽度
+            img_width = min(int(300 * scale_factor), self.scaled_pixmap.width())  # 图片最大宽度
             img_height = int(img_width * (self.scaled_pixmap.height() / self.scaled_pixmap.width()))
-            img_height = min(200, img_height)  # 图片最大高度
+            img_height = min(int(200 * scale_factor), img_height)  # 图片最大高度
             
         # 计算总大小
         content_width = max(
@@ -189,7 +190,7 @@ class SpeechBubble(QLabel):
 
 class SpeechBubbleList():
     _active_bubbles : list[SpeechBubble]
-    _vertical_spacing = 5
+    _vertical_spacing = int(5 * scale_factor)
     
     def __init__(self, parent=None, use_database: bool = True) -> None:
         self.parent = parent
@@ -383,9 +384,9 @@ class SpeechBubbleList():
         screen_geo = QApplication.primaryScreen().availableGeometry()
         parent_rect = self.parent.geometry()
         
-        # 计算基准位置
+        # 计算基准位置（应用缩放倍率）
         center_x = parent_rect.center().x()
-        base_y = parent_rect.top() - 30  # 初始Y位置(父对象上方30px)
+        base_y = parent_rect.top() - int(30 * scale_factor)  # 初始Y位置
         
         # 从下往上排列气泡
         total_height = 0
@@ -397,15 +398,15 @@ class SpeechBubbleList():
             bubble_width = bubble_size.width()
             bubble_height = bubble_size.height()
             
-            # 根据气泡类型确定水平位置
+            # 根据气泡类型确定水平位置（应用缩放倍率）
             if bubble.bubble_type == "received":
-                # 接收气泡：左侧对齐(距中心200px左侧)
-                x_pos = max(screen_geo.left() + 10, 
-                        center_x - 160 - bubble_width//2)
+                # 接收气泡：左侧对齐(距中心160px左侧)
+                x_pos = max(screen_geo.left() + int(10 * scale_factor), 
+                        center_x - int(160 * scale_factor) - bubble_width//2)
             else:
-                # 发送气泡：右侧对齐(距中心200px右侧)
-                x_pos = min(screen_geo.right() - bubble_width - 10,
-                        center_x + 160 - bubble_width//2)
+                # 发送气泡：右侧对齐(距中心160px右侧)
+                x_pos = min(screen_geo.right() - bubble_width - int(10 * scale_factor),
+                        center_x + int(160 * scale_factor) - bubble_width//2)
             
             # 计算垂直位置(从下往上排列)
             y_pos = base_y - total_height - bubble_height
@@ -413,16 +414,16 @@ class SpeechBubbleList():
             # 检查上方空间是否足够
             if y_pos < screen_geo.top():
                 # 如果上方空间不足，改为显示在下方(从父对象底部开始)
-                y_pos = parent_rect.bottom() + total_height + 30
+                y_pos = parent_rect.bottom() + total_height + int(30 * scale_factor)
                 bubble.arrow_height = -abs(bubble.arrow_height)  # 箭头朝下
             else:
                 bubble.arrow_height = abs(bubble.arrow_height)  # 箭头朝上
             
-            # 最终边界检查
-            x_pos = max(screen_geo.left() + 5, 
-                    min(x_pos, screen_geo.right() - bubble_width - 5))
-            y_pos = max(screen_geo.top() + 5,
-                    min(y_pos, screen_geo.bottom() - bubble_height - 5))
+            # 最终边界检查（应用缩放倍率）
+            x_pos = max(screen_geo.left() + int(5 * scale_factor), 
+                    min(x_pos, screen_geo.right() - bubble_width - int(5 * scale_factor)))
+            y_pos = max(screen_geo.top() + int(5 * scale_factor),
+                    min(y_pos, screen_geo.bottom() - bubble_height - int(5 * scale_factor)))
             
             # 应用新位置
             bubble.move(int(x_pos), int(y_pos))

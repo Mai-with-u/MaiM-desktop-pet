@@ -14,7 +14,8 @@ from src.frontend.ScreenshotSelector import ScreenshotSelector
 from src.util.logger import logger  # noqa: F401
 from src.util.image_util import pixmap_to_base64
 
-from config import config
+from config import config, scale_factor, get_scale_factor
+import tomli
 
 import asyncio
 import sys
@@ -61,7 +62,7 @@ class DesktopPet(QWidget):
             self.show_message("终端藏在托盘栏咯，进入托盘栏打开叭")
 
         
-     #主窗口初始化相关
+    #主窗口初始化相关
     def init_ui(self):
 
         # 设置窗口属性
@@ -71,18 +72,30 @@ class DesktopPet(QWidget):
             Qt.SubWindow              # 子窗口
         )
         self.setAttribute(Qt.WA_TranslucentBackground)  # 透明背景
-        self.setFixedSize(400, 600)
+        
+        # 应用缩放倍率
+        base_width = 400
+        base_height = 600
+        scaled_width = int(base_width * scale_factor)
+        scaled_height = int(base_height * scale_factor)
+        self.setFixedSize(scaled_width, scaled_height)
         
         # 加载图片
         self.pet_image = QLabel(self)
         pixmap = QPixmap("./img/small_maimai.png")  # 替换为你的图片路径img/maimai.png
-        self.pet_image.setPixmap(pixmap)
-        self.pet_image.resize(pixmap.size())
+        scaled_pixmap = pixmap.scaled(
+            int(pixmap.width() * scale_factor),
+            int(pixmap.height() * scale_factor),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        self.pet_image.setPixmap(scaled_pixmap)
+        self.pet_image.resize(scaled_pixmap.size())
         
         # 设置初始位置和大小
         screen_geo = QApplication.primaryScreen().availableGeometry()  # 获取可用屏幕区域（排除任务栏）
-        x = screen_geo.width() - self.width() - 20  # 右边距20px
-        y = screen_geo.height() - self.height() - 80  # 下边距20px
+        x = screen_geo.width() - self.width() - int(20 * scale_factor)  # 右边距
+        y = screen_geo.height() - self.height() - int(80 * scale_factor)  # 下边距
         self.move(x, y)
 
     def init_tray_icon(self):
@@ -308,17 +321,40 @@ class DesktopPet(QWidget):
             self._move_worker.stop()
         menu = BubbleMenu(self)
         
+        # 主菜单项
         actions = [
             ("🐾 隐藏", self.hide),
             ("✏️ 聊聊天", self.show_chat_input),  
             ("📸 截图", self.start_screenshot),
             ("👀 麦麦窥屏", self.start_peeking) if not self.is_peeking else ("⏹️ 停止窥屏", self.stop_peeking),
-            ("❌ 退出", QApplication.quit),
         ]
 
         for text, callback in actions:
             action = menu.addAction(text)
             action.triggered.connect(callback)
+
+        # 添加缩放子菜单
+        scale_menu = menu.addMenu("🔍 缩放")
+        
+        scale_actions = [
+            ("0.5x (50%)", 0.5),
+            ("0.75x (75%)", 0.75),
+            ("1.0x (100%)", 1.0),
+            ("1.25x (125%)", 1.25),
+            ("1.5x (150%)", 1.5),
+            ("2.0x (200%)", 2.0),
+        ]
+
+        for text, scale in scale_actions:
+            action = scale_menu.addAction(text)
+            # 标记当前缩放
+            if abs(scale - get_scale_factor()) < 0.01:
+                action.setText(f"✓ {text}")
+            action.triggered.connect(lambda checked, s=scale: self.change_scale(s))
+
+        menu.addSeparator()
+        exit_action = menu.addAction("❌ 退出")
+        exit_action.triggered.connect(QApplication.quit)
 
         menu.exec_(event.globalPos())
 
@@ -402,6 +438,30 @@ class DesktopPet(QWidget):
             pixmap = screen.grabWindow(0)
             # 处理截图
             self.handle_screenshot(pixmap)
+
+    def change_scale(self, new_scale: float):
+        """改变界面缩放倍率"""
+        try:
+            # 更新配置文件
+            with open("config.toml", "rb") as f:
+                config_data = tomli.load(f)
+            
+            # 更新缩放倍率
+            if 'interface' not in config_data:
+                config_data['interface'] = {}
+            config_data['interface']['scale_factor'] = new_scale
+            
+            # 写回配置文件
+            with open("config.toml", "w", encoding='utf-8') as f:
+                import tomli_w
+                f.write(tomli_w.dumps(config_data))
+            
+            # 显示提示
+            self.show_message(f"缩放已调整为 {new_scale}x，重启程序后生效", type="received")
+            
+        except Exception as e:
+            print(f"修改缩放倍率失败: {e}")
+            self.show_message(f"修改缩放失败: {e}", type="received")
 
 
 
