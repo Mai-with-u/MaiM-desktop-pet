@@ -239,9 +239,28 @@ class SpeechBubbleList():
         # 异步保存到数据库（不阻塞UI）
         if self.use_database and save_to_db:
             if message_obj:
-                asyncio.create_task(self._save_to_database(message_obj))
+                self._async_save(self._save_to_database(message_obj))
             else:
-                asyncio.create_task(self._save_message_to_db(text_content, msg_type))
+                self._async_save(self._save_message_to_db(text_content, msg_type))
+    
+    def _async_save(self, coro):
+        """在后台线程中执行异步任务"""
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(coro, loop=loop)
+            else:
+                # 如果没有运行中的事件循环，创建新的
+                asyncio.run(coro)
+        except RuntimeError:
+            # 如果没有事件循环，创建新的
+            try:
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                new_loop.run_until_complete(coro)
+                new_loop.close()
+            except Exception as e:
+                logger.error(f"异步保存失败: {e}")
     
     def del_first_msg(self):
         if self._active_bubbles and self._active_bubbles[0]:

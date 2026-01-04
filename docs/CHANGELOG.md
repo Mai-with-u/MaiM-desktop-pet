@@ -86,14 +86,24 @@ await chat_util.send_emoji("😊")
 ### 🐛 Bug 修复
 
 1. **修复注册用户失败问题**
-   - 问题：发送消息时 `platform`、`user_id` 和 `nickname` 参数可能为空
+   - 问题：发送消息时报错 "platform、user_id 和 nickname 都是必需参数"
    - 原因：配置文件中 `userNickname` 为空字符串，且缺少参数验证
    - 解决：在 `_create_user_info()` 方法中添加参数验证，确保所有必需参数不为空
    - 优先使用 `userNickname`，如果为空则使用 `Nickname` 作为后备
 
 2. **修复 CSS 样式解析错误**
-   - 问题：`bubble_input.css` 文件格式错误
-   - 解决：添加缺失的括号，修正样式块结构
+   - 问题：`bubble_input.css` 文件格式错误，导致样式无法正常应用
+   - 解决：修复 QPushButton 样式块的括号缺失问题
+
+3. **修复异步任务执行错误**
+   - 问题：在 PyQt5 回调函数中调用 `asyncio.create_task()` 报错 "RuntimeError: no running event loop"
+   - 原因：PyQt5 的事件循环与 asyncio 的事件循环不兼容，直接调用 `create_task()` 会失败
+   - 解决：添加 `_async_save()` 方法，智能处理异步任务的执行：
+     - 检查是否有运行中的事件循环
+     - 如果有，使用 `asyncio.ensure_future()` 在现有循环中执行
+     - 如果没有，创建新的事件循环来执行任务
+     - 添加完整的异常处理，避免影响 UI 线程
+   - 影响：修复了用户发送消息时保存到数据库的崩溃问题
 
 ### 📝 技术细节
 

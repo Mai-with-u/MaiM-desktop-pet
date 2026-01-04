@@ -48,12 +48,35 @@ self.default_sender_nickname = (
 
 **解决**: 修复 QPushButton 样式块的括号缺失问题
 
+### 修复 3: 异步任务执行错误
+**问题**: 在 PyQt5 回调函数中调用 asyncio.create_task() 报错 "RuntimeError: no running event loop"
+
+**原因**: PyQt5 的事件循环与 asyncio 的事件循环不兼容
+
+**解决**: 添加 _async_save() 方法智能处理异步任务：
+```python
+def _async_save(self, coro):
+    """在后台线程中执行异步任务"""
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(coro, loop=loop)
+        else:
+            asyncio.run(coro)
+    except RuntimeError:
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        new_loop.run_until_complete(coro)
+        new_loop.close()
+```
+
 ## 📊 更新文件清单
 
 ### 修改的文件
 - `src/shared/models/message.py` - 标准消息类升级
 - `src/core/chat.py` - 聊天模块重构
 - `src/frontend/style_sheets/bubble_input.css` - CSS 修复
+- `src/frontend/bubble_speech.py` - 异步任务修复
 - `src/shared/models/README.md` - 文档更新
 
 ### 新增的文件
