@@ -100,27 +100,9 @@ class DesktopPet(QWidget):
         else:
             self.console_window = None
         
-        # 托盘菜单（保持原有样式）
+        # 托盘菜单
         tray_menu = QMenu()
-        tray_menu.setStyleSheet("""
-            QMenu {
-                background-color: #f0f0f0;
-                border: 1px solid #ccc;
-                border-radius: 5px;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 5px 20px;
-                color: #333;
-            }
-            QMenu::item:selected {
-                background-color: #4CAF50;
-                color: white;
-            }
-            QMenu::item:disabled {
-                color: #999;
-            }
-        """)
+        self._load_tray_menu_style(tray_menu)
         
         # 宠物控制
         show_action = tray_menu.addAction("显示宠物")
@@ -145,6 +127,34 @@ class DesktopPet(QWidget):
         self.update_terminal_menu_state()
         if config.hide_console:
             self.hide_console()
+
+    def _load_tray_menu_style(self, menu):
+        """加载托盘菜单样式"""
+        try:
+            with open('src/frontend/style_sheets/pet.css', 'r', encoding='utf-8') as f:
+                menu.setStyleSheet(f.read())
+        except FileNotFoundError:
+            print("样式表文件未找到: src/frontend/style_sheets/pet.css")
+            # 如果文件不存在，保持原始内联样式作为后备
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #f0f0f0;
+                    border: 1px solid #ccc;
+                    border-radius: 5px;
+                    padding: 5px;
+                }
+                QMenu::item {
+                    padding: 5px 20px;
+                    color: #333;
+                }
+                QMenu::item:selected {
+                    background-color: #4CAF50;
+                    color: white;
+                }
+                QMenu::item:disabled {
+                    color: #999;
+                }
+            """)
         
 
     def toggle_console(self):

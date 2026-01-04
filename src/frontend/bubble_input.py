@@ -37,36 +37,42 @@ class BubbleInput(QWidget):
         self.input_field.returnPressed.connect(self._on_send)
 
     def init_style(self):
-        self.setStyleSheet("""
-            QWidget {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #f0f8ff, stop:1 #e6f3ff);
-                border-radius: 15px;
-                border: 2px solid #a0d1eb;
-            }
-            QLineEdit {
-                background: rgba(255, 255, 255, 0.9);
-                border: 1px solid #c0ddec;
-                border-radius: 10px;
-                padding: 8px;
-                font-size: 14px;
-                color: #333;
-            }
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #4CAF50, stop:1 #45a049);
-                color: white;
-                border: none;
-                border-radius: 8px;
-                padding: 8px 20px;
-                font-weight: bold;
-                min-width: 60px;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 #5cb860, stop:1 #4CAF50);
-            }
-        """)
+        try:
+            with open('src/frontend/style_sheets/bubble_input.css', 'r', encoding='utf-8') as f:
+                self.setStyleSheet(f.read())
+        except FileNotFoundError:
+            print("样式表文件未找到: src/frontend/style_sheets/bubble_input.css")
+            # 如果文件不存在，保持原始内联样式作为后备
+            self.setStyleSheet("""
+                QWidget {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #f0f8ff, stop:1 #e6f3ff);
+                    border-radius: 15px;
+                    border: 2px solid #a0d1eb;
+                }
+                QLineEdit {
+                    background: rgba(255, 255, 255, 0.9);
+                    border: 1px solid #c0ddec;
+                    border-radius: 10px;
+                    padding: 8px;
+                    font-size: 14px;
+                    color: #333;
+                }
+                QPushButton {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #4CAF50, stop:1 #45a049);
+                    color: white;
+                    border: none;
+                    border-radius: 8px;
+                    padding: 8px 20px;
+                    font-weight: bold;
+                    min-width: 60px;
+                }
+                QPushButton:hover {
+                    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                        stop:0 #5cb860, stop:1 #4CAF50);
+                }
+            """)
 
     def init_animation(self):
         # 透明度动画
