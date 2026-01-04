@@ -7,9 +7,12 @@ import sqlite3
 import json
 import os
 import aiosqlite
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, TYPE_CHECKING
 from .base import BaseDatabase
 from src.util.logger import logger
+
+if TYPE_CHECKING:
+    from src.shared.models.message import MessageBase
 
 
 class SQLiteDatabase(BaseDatabase):
@@ -92,20 +95,26 @@ class SQLiteDatabase(BaseDatabase):
             logger.error(f"初始化 SQLite 数据库表失败: {e}")
             return False
     
-    async def save_message(self, message: Dict[str, Any]) -> bool:
+    async def save_message(self, message: 'MessageBase' | Dict[str, Any]) -> bool:
         """
         保存消息到数据库
         
         Args:
-            message: 消息字典，包含消息信息
+            message: 消息对象（MessageBase）或消息字典
             
         Returns:
             bool: 是否保存成功
         """
         try:
-            message_info = message.get('message_info', {})
+            # 如果是 MessageBase 对象，转换为字典
+            if hasattr(message, 'to_dict'):
+                message_dict = message.to_dict()
+            else:
+                message_dict = message
+            
+            message_info = message_dict.get('message_info', {})
             user_info = message_info.get('user_info', {})
-            message_segment = message.get('message_segment', {})
+            message_segment = message_dict.get('message_segment', {})
             
             await self.connection.execute('''
                 INSERT OR REPLACE INTO messages (

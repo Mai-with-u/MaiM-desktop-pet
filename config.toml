@@ -2,7 +2,7 @@ url = "ws://127.0.0.1:8000/ws"  #填入与maim port相同的端口号，默认�
 Nickname = "麦麦"                 #你的bot昵称
 userNickname = ""                #你的昵称
 platform = "desktop-pet"        #如果你不知道这个是什么的，那你就不要修改
-hide_console = true             #打开程序的时候是否自动关闭终端
+hide_console = false            #打开程序的时候是否自动关闭终端
 Screenshot_shortcuts = "Ctrl+Shift+A" #截图快捷键
 
 allow_multiple_source_conversion = false #多桌宠连接适配，默认为关

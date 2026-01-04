@@ -2,7 +2,16 @@ from PyQt5.QtWidgets import QLabel, QApplication
 from PyQt5.QtCore import Qt, QPropertyAnimation, QPoint, QSize, QRect, QSequentialAnimationGroup
 from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath, QPixmap, QImage
 
-from typing import Literal, Optional
+from typing import Literal, Optional, TYPE_CHECKING
+import uuid
+import time
+import asyncio
+from src.database import db_manager
+from src.util.logger import logger
+from src.shared.models.message import MessageBase
+
+if TYPE_CHECKING:
+    pass
         
 
 class SpeechBubble(QLabel):
@@ -182,36 +191,169 @@ class SpeechBubbleList():
     _active_bubbles : list[SpeechBubble]
     _vertical_spacing = 5
     
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, use_database: bool = True) -> None:
         self.parent = parent
         self._active_bubbles = []  # 保存所有活动气泡
+        self.use_database = use_database  # 是否使用数据库存储
 
     def add_message(self, 
-                  message: str = "", 
+                  message: str | MessageBase = "", 
                   msg_type: Literal["received", "sent"] = "received",
-                  pixmap: Optional[QPixmap] = None):
-        """添加新消息（可以是文字、图片或两者都有）
+                  pixmap: Optional[QPixmap] = None,
+                  save_to_db: bool = True):
+        """添加新消息（可以是文字、图片、MessageBase对象或两者都有）
         
         参数:
-            message: 要显示的文本消息
+            message: 要显示的文本消息 或 MessageBase 对象
             msg_type: 消息类型，"received"或"sent"
             pixmap: 要显示的图片(QPixmap对象)
+            save_to_db: 是否保存到数据库（默认True）
         """
-        print(1)
+        # 如果是 MessageBase 对象，提取信息
+        message_obj = None
+        text_content = ""
+        
+        if isinstance(message, MessageBase):
+            message_obj = message
+            text_content = message.message_content
+            # 从 MessageBase 对象确定消息类型
+            if message.user_id == "0":
+                msg_type = "sent"
+            else:
+                msg_type = "received"
+            # MessageBase 对象已经保存过，不再保存
+            save_to_db = False
+        else:
+            text_content = message
+        
         new_bubble = SpeechBubble(
             parent=self.parent,
             bubble_type=msg_type,
-            text=message,
+            text=text_content,
             pixmap=pixmap
         )
         self._active_bubbles.append(new_bubble)
         new_bubble.show_message()
         self.update_position()
+        
+        # 异步保存到数据库（不阻塞UI）
+        if self.use_database and save_to_db:
+            if message_obj:
+                asyncio.create_task(self._save_to_database(message_obj))
+            else:
+                asyncio.create_task(self._save_message_to_db(text_content, msg_type))
     
     def del_first_msg(self):
         if self._active_bubbles and self._active_bubbles[0]:
             self._active_bubbles[0].fade_out()
             del self._active_bubbles[0]
+    
+    async def _save_to_database(self, message_obj: MessageBase):
+        """将 MessageBase 对象保存到数据库"""
+        if not self.use_database or not db_manager.is_initialized():
+            return
+        
+        try:
+            # 保存到数据库
+            await db_manager.save_message(message_obj)
+            logger.debug(f"消息已保存到数据库: {message_obj.message_id[:8]}...")
+        except Exception as e:
+            logger.error(f"保存消息到数据库失败: {e}")
+    
+    async def _save_message_to_db(self, text: str, msg_type: Literal["received", "sent"]):
+        """将文本消息创建为 MessageBase 并保存到数据库"""
+        if not self.use_database or not db_manager.is_initialized():
+            return
+        
+        try:
+            # 创建 MessageBase 对象
+            if msg_type == "sent":
+                message_obj = MessageBase.create_sent_message(text, user_nickname="桌面宠物")
+            else:
+                message_obj = MessageBase.create_received_message(text, user_nickname="用户")
+            
+            # 保存到数据库
+            await db_manager.save_message(message_obj)
+            logger.debug(f"消息已保存到数据库: {message_obj.message_id[:8]}...")
+        except Exception as e:
+            logger.error(f"保存消息到数据库失败: {e}")
+    
+    async def load_history(self, limit: int = 20):
+        """从数据库加载历史消息
+        
+        参数:
+            limit: 加载的消息数量
+        """
+        if not self.use_database or not db_manager.is_initialized():
+            logger.warning("数据库未初始化，无法加载历史消息")
+            return
+        
+        try:
+            # 清空当前显示的消息
+            self.clear_all()
+            
+            # 从数据库获取消息（按时间倒序）
+            messages = await db_manager.get_messages(limit=limit)
+            
+            # 按时间顺序显示（从旧到新），所以需要反转列表
+            messages = list(reversed(messages))
+            
+            for msg_dict in messages:
+                # 从字典创建 MessageBase 对象
+                message_obj = MessageBase.from_dict(msg_dict)
+                
+                # 直接使用 MessageBase 对象添加消息
+                self.add_message(
+                    message=message_obj,
+                    save_to_db=False  # 避免重复保存
+                )
+            
+            logger.info(f"已加载 {len(messages)} 条历史消息")
+        except Exception as e:
+            logger.error(f"加载历史消息失败: {e}")
+    
+    async def search_messages(self, keyword: str, limit: int = 20):
+        """从数据库搜索消息并显示
+        
+        参数:
+            keyword: 搜索关键词
+            limit: 返回结果数量限制
+        """
+        if not self.use_database or not db_manager.is_initialized():
+            logger.warning("数据库未初始化，无法搜索消息")
+            return []
+        
+        try:
+            # 从数据库搜索消息
+            messages = await db_manager.search_messages(keyword, limit=limit)
+            
+            logger.info(f"搜索到 {len(messages)} 条包含'{keyword}'的消息")
+            return messages
+        except Exception as e:
+            logger.error(f"搜索消息失败: {e}")
+            return []
+    
+    def clear_all(self):
+        """清空所有显示的消息气泡"""
+        for bubble in self._active_bubbles:
+            bubble.deleteLater()
+        self._active_bubbles.clear()
+        logger.info("已清空所有消息气泡")
+    
+    async def clear_database(self):
+        """清空数据库中的所有消息"""
+        if not self.use_database or not db_manager.is_initialized():
+            logger.warning("数据库未初始化，无法清空数据库")
+            return False
+        
+        try:
+            # 清空数据库
+            await db_manager.clear_all_messages()
+            logger.info("已清空数据库中的所有消息")
+            return True
+        except Exception as e:
+            logger.error(f"清空数据库失败: {e}")
+            return False
     
     def update_position(self):
         """更新所有活动气泡的位置，自动排列并处理边界情况"""
