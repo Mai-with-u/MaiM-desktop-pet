@@ -7,3 +7,4 @@ pywin32==310
 tomli-w==1.2.0
 tomli==2.2.1
 maim-message
+aiosqlite==0.19.0
