@@ -16,7 +16,7 @@ if __name__ == "__main__":
         api_thread = threading.Thread(target=run, daemon=True)
         api_thread.start()
         
-        from src.core.pet import chat_pet
+        from src.frontend.pet import chat_pet
         chat_pet.show()
         sys.exit(app.exec_())
     except KeyboardInterrupt:

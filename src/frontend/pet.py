@@ -4,12 +4,12 @@ from PyQt5.QtCore import Qt,QTimer,QThread,QPropertyAnimation,QEasingCurve,QSize
 from PyQt5.QtGui import QPixmap,QCursor,QIcon,QKeySequence
 
 from src.core.chat import chat_util  # noqa: F401
-from src.core.signals import signals_bus
+from src.frontend.signals import signals_bus
 
-from src.features.bubble_menu import BubbleMenu
-from src.features.bubble_speech import SpeechBubbleList
-from src.features.bubble_input import BubbleInput  # 新增导入
-from src.features.ScreenshotSelector import ScreenshotSelector
+from src.frontend.bubble_menu import BubbleMenu
+from src.frontend.bubble_speech import SpeechBubbleList
+from src.frontend.bubble_input import BubbleInput  # 新增导入
+from src.frontend.ScreenshotSelector import ScreenshotSelector
 
 from src.util.logger import logger  # noqa: F401
 from src.util.image_util import pixmap_to_base64
