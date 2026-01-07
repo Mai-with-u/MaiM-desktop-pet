@@ -11,6 +11,7 @@ class Config(BaseModel):
     Screenshot_shortcuts: str = None
     allow_multiple_source_conversion:bool = False #多桌宠连接适配，默认为关
     interface: dict = None
+    database: dict = None
 
 
 

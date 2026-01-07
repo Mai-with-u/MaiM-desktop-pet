@@ -9,6 +9,29 @@ allow_multiple_source_conversion = false
 [interface]
 scale_factor = 0.75
 
+[render]
+mode = "static"
+allow_switch = true
+
+[live2d]
+enabled = false
+model_path = "./live2d/models/maotai/maotai.model3.json"
+model_name = "maotai"
+physics_enabled = true
+render_quality = "medium"
+gpu_acceleration = true
+
+[animation]
+default_state = "idle"
+default_expression = "normal"
+fps = 60
+breathing_enabled = true
+
+[performance]
+max_fps = 60
+vsync = true
+texture_cache_size = 256
+
 [database]
 type = "sqlite"
 path = "data/chat.db"

@@ -223,7 +223,7 @@ class SpeechBubbleList():
             else:
                 msg_type = "received"
             # MessageBase 对象已经保存过，不再保存
-            save_to_db = False
+            save_to_db = True
         else:
             text_content = message
         
