@@ -10,6 +10,7 @@ import uuid
 from config import config
 from src.core.router import router
 from src.util.logger import logger
+from src.database import db_manager
 
 
 class Chat:
@@ -170,6 +171,19 @@ class Chat:
             
             # 发送消息
             await router.send_message(message_base)
+            
+            # 将发送的消息保存到数据库
+            try:
+                if db_manager.is_initialized():
+                    save_success = await db_manager.save_message(message_base.to_dict())
+                    if save_success:
+                        logger.debug(f"发送消息已保存到数据库")
+                    else:
+                        logger.warning(f"发送消息保存到数据库失败")
+                else:
+                    logger.debug(f"数据库未初始化，跳过消息存储")
+            except Exception as db_error:
+                logger.error(f"保存发送消息到数据库时出错: {db_error}", exc_info=True)
             
             logger.info(f"消息发送成功 - ID: {message_base.message_info.message_id}, "
                        f"内容: {text[:50]}{'...' if len(text) > 50 else ''}")

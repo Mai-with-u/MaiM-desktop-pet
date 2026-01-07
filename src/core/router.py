@@ -7,6 +7,7 @@ from maim_message import (
 )
 from config import config
 from src.util.logger import logger
+from src.database import db_manager
 
 
 
@@ -63,6 +64,20 @@ async def message_handler(message):
     message_segment = message.get('message_segment', {})
     message_type = message_segment.get('type', {})
     
+    # 将接收到的消息保存到数据库
+    try:
+        if db_manager.is_initialized():
+            save_success = await db_manager.save_message(message)
+            if save_success:
+                logger.debug(f"接收消息已保存到数据库")
+            else:
+                logger.warning(f"接收消息保存到数据库失败")
+        else:
+            logger.debug(f"数据库未初始化，跳过消息存储")
+    except Exception as e:
+        logger.error(f"保存接收消息到数据库时出错: {e}", exc_info=True)
+    
+    # 发送消息到信号总线
     if message_type == "text":
         message_content = str(message_segment.get('data', ""))
         signals_bus.message_received.emit(message_content)  # 跨线程安全

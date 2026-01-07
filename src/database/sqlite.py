@@ -18,14 +18,14 @@ if TYPE_CHECKING:
 class SQLiteDatabase(BaseDatabase):
     """SQLite 数据库实现类"""
     
-    def __init__(self, db_path: str):
+    def __init__(self, path: str):
         """
         初始化 SQLite 数据库
         
         Args:
-            db_path: 数据库文件路径
+            path: 数据库文件路径
         """
-        self.db_path = db_path
+        self.db_path = path
         self.connection = None
         
     async def connect(self) -> bool:

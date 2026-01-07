@@ -35,3 +35,8 @@ texture_cache_size = 256
 [database]
 type = "sqlite"
 path = "data/chat.db"
+
+[state]
+window_locked = false
+window_visible = true
+console_visible = true
