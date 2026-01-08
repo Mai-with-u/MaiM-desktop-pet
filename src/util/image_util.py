@@ -2,11 +2,12 @@ from PyQt5.QtCore import QBuffer, QIODevice, QByteArray
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
 import base64
-from config import get_scale_factor as _get_scale_factor_from_config
 
 def get_scale_factor() -> float:
     """获取界面缩放倍率"""
-    return _get_scale_factor_from_config()
+    from config import load_config, get_scale_factor as _get_scale_factor
+    config = load_config()
+    return _get_scale_factor(config)
 
 def pixmap_to_base64(
     pixmap: QPixmap, 

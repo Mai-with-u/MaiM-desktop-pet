@@ -46,8 +46,8 @@ async def initialize_database():
     
     try:
         if config.database:
-            db_type = config.database.get('type', 'sqlite')
-            db_path = config.database.get('path', 'data/chat.db')
+            db_type = getattr(config.database, 'type', 'sqlite')
+            db_path = getattr(config.database, 'path', 'data/chat.db')
             
             success = await db_manager.initialize(
                 db_type=db_type,
