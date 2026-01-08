@@ -9,7 +9,10 @@ import asyncio
 from src.database import db_manager
 from src.util.logger import logger
 from src.shared.models.message import MessageBase
-from config import scale_factor
+from config import load_config, get_scale_factor
+
+config = load_config()
+scale_factor = get_scale_factor(config)
 
 if TYPE_CHECKING:
     pass

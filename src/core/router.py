@@ -5,8 +5,11 @@ from maim_message import (
     RouteConfig,
     TargetConfig,
 )
-from config import config
+from config import load_config
 from src.util.logger import logger
+
+# 加载配置
+config = load_config()
 from src.database import db_manager
 
 

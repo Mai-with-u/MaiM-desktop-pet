@@ -39,8 +39,10 @@ def run():
 async def initialize_database():
     """初始化数据库"""
     from src.database import db_manager
-    from config import config
+    from config import load_config
     from src.util.logger import logger
+    
+    config = load_config()
     
     try:
         if config.database:

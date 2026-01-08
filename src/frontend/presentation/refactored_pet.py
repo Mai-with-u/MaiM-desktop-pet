@@ -18,7 +18,10 @@ from src.frontend.ScreenshotSelector import ScreenshotSelector
 from src.util.logger import logger
 from src.util.image_util import get_scale_factor, pixmap_to_base64
 
-from config import config, scale_factor
+from config import load_config, get_scale_factor
+
+config = load_config()
+scale_factor = get_scale_factor(config)
 
 import sys
 from typing import Literal

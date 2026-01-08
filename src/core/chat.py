@@ -7,8 +7,11 @@ from typing import Optional
 import time
 import uuid
 
-from config import config
+from config import load_config
 from src.core.router import router
+
+# 加载配置
+config = load_config()
 from src.util.logger import logger
 from src.database import db_manager
 

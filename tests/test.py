@@ -5,7 +5,11 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from config import config, scale_factor
+from config import load_config, get_scale_factor
+
+# 加载配置
+config = load_config()
+scale_factor = get_scale_factor(config)
 
 # 读取 Live2D 模型路径
 model_path = config.live2d.get('model_path', '')
