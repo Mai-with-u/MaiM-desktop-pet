@@ -354,7 +354,7 @@ class DesktopPet(QWidget):
 
         menu.addSeparator()
         exit_action = menu.addAction("❌ 退出")
-        exit_action.triggered.connect(QApplication.quit)
+        exit_action.triggered.connect(self.safe_quit)
 
         menu.exec_(event.globalPos())
 

@@ -50,12 +50,30 @@ class RenderManager:
     def load_config(self):
         """加载渲染配置"""
         try:
-            import config
+            from config import config
+            
+            # 使用 getattr 安全地获取配置属性
+            render_config = getattr(config, 'render', None)
+            live2d_config = getattr(config, 'live2d', None)
             
             # 获取渲染配置
-            self.use_live2d = getattr(config, 'live2d_enabled', False)
-            self.live2d_model_path = getattr(config, 'live2d_model_path', '')
-            self.allow_switch = getattr(config, 'render_allow_switch', True)
+            if render_config:
+                render_mode = render_config.get('mode', 'static')
+                self.allow_switch = render_config.get('allow_switch', True)
+                
+                # 判断是否使用 Live2D
+                self.use_live2d = (render_mode == 'live2d')
+            else:
+                self.use_live2d = False
+                self.allow_switch = True
+            
+            # 获取 Live2D 配置
+            if live2d_config:
+                self.live2d_model_path = live2d_config.get('model_path', '')
+                # 覆盖使用 Live2D 的设置（优先使用 live2d.enabled）
+                self.use_live2d = live2d_config.get('enabled', self.use_live2d)
+            else:
+                self.live2d_model_path = ""
             
             logger.info(f"加载渲染配置: use_live2d={self.use_live2d}, "
                        f"model_path={self.live2d_model_path}, "

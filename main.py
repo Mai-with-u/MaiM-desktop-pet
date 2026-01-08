@@ -1,10 +1,36 @@
 import sys
 import threading
 import asyncio
+import atexit
 import src.util.except_hook
 from PyQt5.QtWidgets import QApplication
 
 app = QApplication(sys.argv)
+
+# 全局变量，用于存储清理函数
+cleanup_functions = []
+
+def register_cleanup(func):
+    """注册清理函数"""
+    cleanup_functions.append(func)
+
+async def cleanup_all():
+    """执行所有清理操作"""
+    from src.util.logger import logger
+    
+    logger.info("开始清理资源...")
+    
+    # 执行所有注册的清理函数
+    for cleanup_func in cleanup_functions:
+        try:
+            if asyncio.iscoroutinefunction(cleanup_func):
+                await cleanup_func()
+            else:
+                cleanup_func()
+        except Exception as e:
+            logger.error(f"清理函数执行失败: {e}", exc_info=True)
+    
+    logger.info("资源清理完成")
 
 def run():
     from src.core.router import main

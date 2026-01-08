@@ -7,18 +7,18 @@ Screenshot_shortcuts = "Ctrl+Shift+A"
 allow_multiple_source_conversion = false
 
 [interface]
-scale_factor = 0.75
+scale_factor = 1.0
 
 [render]
-mode = "static"
+mode = "live2d"
 allow_switch = true
 
 [live2d]
-enabled = false
-model_path = "./live2d/models/maotai/maotai.model3.json"
-model_name = "maotai"
+enabled = true
+model_path = "data/live2d/hiyori_pro_zh/runtime/hiyori_pro_t11.model3.json"
+model_name = "hiyori_pro_t11"
 physics_enabled = true
-render_quality = "medium"
+render_quality = "high"
 gpu_acceleration = true
 
 [animation]

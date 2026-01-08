@@ -1,20 +1,25 @@
 import tomli
 import uuid
 from pydantic import BaseModel
+from typing import Optional, Dict
 
 class Config(BaseModel):
-    url: str = None
-    Nickname: str = None
-    userNickname: str = None
+    url: Optional[str] = None
+    Nickname: Optional[str] = None
+    userNickname: Optional[str] = None
     platform: str = "desktop-pet"
     hide_console: bool = True
-    Screenshot_shortcuts: str = None
-    allow_multiple_source_conversion:bool = False #多桌宠连接适配，默认为关
-    interface: dict = None
-    database: dict = None
-
-
-
+    Screenshot_shortcuts: Optional[str] = None
+    allow_multiple_source_conversion: bool = False #多桌宠连接适配，默认为关
+    interface: Optional[Dict] = None
+    render: Optional[Dict] = None
+    live2d: Optional[Dict] = None
+    animation: Optional[Dict] = None
+    performance: Optional[Dict] = None
+    database: Optional[Dict] = None
+    state: Optional[Dict] = None
+ 
+ 
 # 加载 TOML 配置文件
 with open("config.toml", "rb") as f:
     config_data = tomli.load(f)
@@ -33,5 +38,5 @@ def get_scale_factor() -> float:
 # 全局缩放倍率
 scale_factor = get_scale_factor()
 
-if config.allow_multiple_source_conversion :
+if config.allow_multiple_source_conversion:
     config.platform = config.platform + "-" + str(uuid.uuid4())

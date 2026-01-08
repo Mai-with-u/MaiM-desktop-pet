@@ -8,3 +8,7 @@ tomli-w==1.2.0
 tomli==2.2.1
 maim-message
 aiosqlite==0.19.0
+# Live2D 相关依赖
+live2d-py==0.6.0.1
+PyOpenGL==3.1.6
+numpy==1.24.3

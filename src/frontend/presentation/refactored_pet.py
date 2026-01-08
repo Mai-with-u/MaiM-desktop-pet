@@ -227,17 +227,47 @@ class RefactoredDesktopPet(QWidget):
     
     def safe_quit(self):
         """安全退出"""
+        import asyncio
+        
         # 恢复终端显示
         if not self.state_manager.is_console_visible():
             self.state_manager.show_console()
         
-        # 清理资源
+        # 清理前端资源
+        logger.info("清理前端资源...")
         self.event_manager.cleanup()
         self.render_manager.cleanup()
         self.state_manager.cleanup()
         
+        # 清理所有资源（包括 router、数据库等）
+        try:
+            # 在新的事件循环中执行异步清理
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self._cleanup_all_resources())
+            loop.close()
+        except Exception as e:
+            logger.error(f"清理资源时出错: {e}", exc_info=True)
+        
         # 退出应用
+        logger.info("应用程序退出")
         QApplication.quit()
+    
+    async def _cleanup_all_resources(self):
+        """清理所有异步资源"""
+        try:
+            # 导入并执行清理函数
+            from main import cleanup_all
+            await cleanup_all()
+            
+            # 清理数据库
+            from src.database import db_manager
+            if db_manager.is_initialized():
+                await db_manager.close()
+                logger.info("数据库连接已关闭")
+                
+        except Exception as e:
+            logger.error(f"清理异步资源失败: {e}", exc_info=True)
     
     # 窥屏功能
     def start_peeking(self):

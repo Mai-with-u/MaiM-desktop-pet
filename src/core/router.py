@@ -31,7 +31,22 @@ route_config = RouteConfig(
 # 使用刚刚构建的route_config,从类Router创建路由器实例router
 router = Router(route_config)
 
+async def cleanup_router():
+    """清理路由器连接"""
+    from src.util.logger import logger
+    
+    logger.info("正在关闭路由器连接...")
+    try:
+        await router.stop()
+        logger.info("已关闭所有连接")
+    except Exception as e:
+        logger.error(f"关闭路由器连接时出错: {e}", exc_info=True)
+
 async def main():
+    # 注册清理函数
+    from main import register_cleanup
+    register_cleanup(cleanup_router)
+    
     # 使用实例router的方法注册消息处理器
     router.register_class_handler(message_handler) #message_handler示例见下方
 
