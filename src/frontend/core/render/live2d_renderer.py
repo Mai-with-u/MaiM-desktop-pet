@@ -286,6 +286,28 @@ class Live2DRenderer(IRenderer):
             self.widget.mouse_x = x * self.widget.width()
             self.widget.mouse_y = y * self.widget.height()
     
+    def set_parameters(self, head_angle_x: float = 0.0, head_angle_y: float = 0.0,
+                      eye_angle_x: float = 0.0, eye_angle_y: float = 0.0,
+                      body_angle_x: float = 0.0):
+        """
+        设置 Live2D 头部和眼睛跟踪参数
+        
+        Args:
+            head_angle_x: 头部 X 轴旋转角度（度）
+            head_angle_y: 头部 Y 轴旋转角度（度）
+            eye_angle_x: 眼睛 X 轴旋转角度（度）
+            eye_angle_y: 眼睛 Y 轴旋转角度（度）
+            body_angle_x: 身体 X 轴旋转角度（度）
+        """
+        if self.widget:
+            self.widget.set_parameters(
+                head_angle_x=head_angle_x,
+                head_angle_y=head_angle_y,
+                eye_angle_x=eye_angle_x,
+                eye_angle_y=eye_angle_y,
+                body_angle_x=body_angle_x
+            )
+    
     def _map_state_to_motion_group(self, state: str) -> str:
         """
         将状态名称映射到 Live2D 动作组
@@ -324,8 +346,46 @@ class Live2DWidget(QOpenGLWidget):
         self.model_path = model_path
         self.model = None
         self.initialized = False
+        
+        # 鼠标位置
         self.mouse_x = 400
         self.mouse_y = 300
+        self.current_mouse_x = 400  # 当前追踪到的鼠标位置（用于平滑移动）
+        self.current_mouse_y = 300
+        
+        # 头部和眼睛跟踪参数
+        self.head_angle_x = 0.0
+        self.head_angle_y = 0.0
+        self.eye_angle_x = 0.0
+        self.eye_angle_y = 0.0
+        self.body_angle_x = 0.0
+        
+        # 平滑移动速度 (0.0-1.0, 越小越慢)
+        self.smooth_factor = 0.1
+        
+        # 鼠标跟踪定时器 - 即使窗口非焦点也能跟踪鼠标
+        self.mouse_tracking_timer = QTimer(self)
+        self.mouse_tracking_timer.timeout.connect(self.update_mouse_tracking)
+        self.mouse_tracking_timer.start(33)  # 30 FPS 检查鼠标位置
+    
+    def set_parameters(self, head_angle_x: float = 0.0, head_angle_y: float = 0.0,
+                      eye_angle_x: float = 0.0, eye_angle_y: float = 0.0,
+                      body_angle_x: float = 0.0):
+        """
+        设置头部和眼睛跟踪参数
+        
+        Args:
+            head_angle_x: 头部 X 轴旋转角度（度）
+            head_angle_y: 头部 Y 轴旋转角度（度）
+            eye_angle_x: 眼睛 X 轴旋转角度（度）
+            eye_angle_y: 眼睛 Y 轴旋转角度（度）
+            body_angle_x: 身体 X 轴旋转角度（度）
+        """
+        self.head_angle_x = head_angle_x
+        self.head_angle_y = head_angle_y
+        self.eye_angle_x = eye_angle_x
+        self.eye_angle_y = eye_angle_y
+        self.body_angle_x = body_angle_x
     
     def initializeGL(self):
         """初始化 OpenGL 上下文"""
@@ -380,34 +440,153 @@ class Live2DWidget(QOpenGLWidget):
         if not self.model:
             return
         
-        # 计算鼠标相对于中心的偏移
-        center_x = self.width() / 2
-        center_y = self.height() / 2
-        dx = (self.mouse_x - center_x) / center_x
-        dy = (self.mouse_y - center_y) / center_y
-        
-        # 设置眼睛跟随
-        try:
-            self.model.SetParameterValue('ParamEyeBallX', dx * 30)
-        except:
-            pass
-        try:
-            self.model.SetParameterValue('ParamEyeBallY', dy * 30)
-        except:
-            pass
-        
-        # 更新模型
+        # 先更新模型（计算物理、动画等）
         delta_time = 0.016  # 约 60 FPS
         self.model.Update(delta_time)
         self.model.UpdateBlink(delta_time)
         
-        # 重绘
+        # 在 Update 和 Draw 之间更新平滑的鼠标位置（60fps）
+        # 这确保每次渲染都使用最新的 current 参数
+        self._smooth_mouse_position()
+        
+        # 根据当前的平滑位置更新跟踪参数
+        self._update_tracking_from_mouse(use_current=True)
+        
+        # 在 Update 和 Draw 之间设置参数（正确的顺序）
+        # 设置头部旋转
+        self._try_set_parameter('ParamAngleX', self.head_angle_x)
+        self._try_set_parameter('ParamAngleY', -self.head_angle_y) #y轴通常应该反转
+        self._try_set_parameter('ParamAngleZ', 0.0)  # Z 轴通常不旋转
+        
+        # 设置身体旋转
+        self._try_set_parameter('ParamBodyAngleX', self.body_angle_x)
+        
+        # 设置眼睛转动
+        self._try_set_parameter('ParamEyeBallX', self.eye_angle_x)
+        self._try_set_parameter('ParamEyeBallY', self.eye_angle_y)
+        
+        # 设置眼睑张开度（可选，可以根据需要调整）
+        self._try_set_parameter('ParamEyeLOpen', 1.0)
+        self._try_set_parameter('ParamEyeROpen', 1.0)
+        
+        # 设置嘴巴（可选）
+        self._try_set_parameter('ParamMouthOpenY', 0.0)
+        
+        # 重绘（Draw 在 paintGL 中调用）
         self.update()
     
+    def _try_set_parameter(self, param_name: str, value: float):
+        """
+        尝试设置 Live2D 模型参数
+        
+        Args:
+            param_name: 参数名称
+            value: 参数值
+        """
+        try:
+            self.model.SetParameterValueById(param_name, value)
+        except Exception as e:
+            # 参数不存在或设置失败，静默忽略
+            logger.debug(f"设置参数失败 {param_name}: {e}")
+            pass
+    
+    def update_mouse_tracking(self):
+        """
+        定期更新鼠标跟踪（无论窗口是否有焦点，无论鼠标在哪里）
+        使用全局鼠标位置，实现全屏追踪和平滑移动
+        
+        注意：这个定时器只负责更新目标鼠标位置（mouse_x/y）
+        实际的平滑移动和参数设置在 update_model() 中以 60fps 执行
+        """
+        from PyQt5.QtGui import QCursor
+        
+        # 获取全局鼠标位置
+        global_pos = QCursor.pos()
+        
+        # 转换为窗口局部坐标
+        if self.isVisible():
+            local_pos = self.mapFromGlobal(global_pos)
+            
+            # 只更新目标鼠标位置（mouse_x/y）
+            # 平滑移动会在 update_model() 中以 60fps 执行
+            self.mouse_x = local_pos.x()
+            self.mouse_y = local_pos.y()
+        else:
+            # 窗口不可见，在 update_model() 中会自动重置跟踪
+            pass
+    
+    def _smooth_mouse_position(self):
+        """
+        平滑更新鼠标位置（追逐效果）
+        current_mouse_x/y 会逐渐逼近 mouse_x/y
+        """
+        # 线性插值：current = current + (target - current) * factor
+        dx = self.mouse_x - self.current_mouse_x
+        dy = self.mouse_y - self.current_mouse_y
+        
+        # 如果变化很小，直接跳到目标位置（避免无限逼近）
+        if abs(dx) < 1 and abs(dy) < 1:
+            self.current_mouse_x = self.mouse_x
+            self.current_mouse_y = self.mouse_y
+        else:
+            # 平滑移动
+            self.current_mouse_x += dx * self.smooth_factor
+            self.current_mouse_y += dy * self.smooth_factor
+    
+    def _gradual_reset_tracking(self):
+        """逐渐重置跟踪参数到中心位置（平滑回正）"""
+        reset_factor = 0.05  # 回正速度（更慢一些，更平滑）
+        
+        # 逐渐归零
+        self.head_angle_x *= (1 - reset_factor)
+        self.head_angle_y *= (1 - reset_factor)
+        self.eye_angle_x *= (1 - reset_factor)
+        self.eye_angle_y *= (1 - reset_factor)
+        self.body_angle_x *= (1 - reset_factor)
+    
+    def _update_tracking_from_mouse(self, use_current=False):
+        """
+        根据鼠标位置更新跟踪参数
+        
+        Args:
+            use_current: 是否使用 current_mouse_x/y（平滑位置），
+                      如果为 False 则使用 mouse_x/y（目标位置）
+        """
+        # 选择要使用的鼠标位置
+        if use_current:
+            mx = self.current_mouse_x
+            my = self.current_mouse_y
+        else:
+            mx = self.mouse_x
+            my = self.mouse_y
+        
+        # 计算鼠标相对于中心的归一化坐标 (-1.0 到 1.0)
+        center_x = self.width() / 2
+        center_y = self.height() / 2
+        
+        # 归一化坐标
+        rel_x = (mx - center_x) / center_x
+        rel_y = (my - center_y) / center_y
+        
+        # 更新跟踪参数
+        # 头部角度：归一化坐标 × 30度
+        self.head_angle_x = rel_x * 30.0
+        self.head_angle_y = rel_y * 30.0
+        
+        # 眼睛角度：归一化坐标 × 1.0（眼睛范围较小）
+        self.eye_angle_x = rel_x * 1.0
+        self.eye_angle_y = rel_y * 1.0
+        
+        # 身体角度：头部角度的 0.5 倍
+        self.body_angle_x = self.head_angle_x * 0.5
+    
     def mouseMoveEvent(self, event):
-        """鼠标移动事件"""
+        """鼠标移动事件 - 更新目标鼠标位置"""
         self.mouse_x = event.x()
         self.mouse_y = event.y()
+        
+        # 不直接更新跟踪参数，而是让定时器中的平滑移动来处理
+        # 这样可以保持平滑效果
     
     def cleanup(self):
         """清理资源"""

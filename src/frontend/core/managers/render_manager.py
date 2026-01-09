@@ -232,6 +232,35 @@ class RenderManager:
             except Exception as e:
                 logger.error(f"处理鼠标移动失败: {e}")
     
+    def set_live2d_parameters(self, head_angle_x: float = 0.0, head_angle_y: float = 0.0,
+                             eye_angle_x: float = 0.0, eye_angle_y: float = 0.0,
+                             body_angle_x: float = 0.0):
+        """
+        设置 Live2D 头部和眼睛跟踪参数
+        
+        Args:
+            head_angle_x: 头部 X 轴旋转角度（度）
+            head_angle_y: 头部 Y 轴旋转角度（度）
+            eye_angle_x: 眼睛 X 轴旋转角度（度）
+            eye_angle_y: 眼睛 Y 轴旋转角度（度）
+            body_angle_x: 身体 X 轴旋转角度（度）
+        """
+        if self.renderer and self.current_mode == "live2d":
+            try:
+                # 检查渲染器是否支持参数设置
+                if hasattr(self.renderer, 'set_parameters'):
+                    self.renderer.set_parameters(
+                        head_angle_x=head_angle_x,
+                        head_angle_y=head_angle_y,
+                        eye_angle_x=eye_angle_x,
+                        eye_angle_y=eye_angle_y,
+                        body_angle_x=body_angle_x
+                    )
+                else:
+                    logger.debug("Live2D 渲染器不支持参数设置")
+            except Exception as e:
+                logger.error(f"设置 Live2D 参数失败: {e}")
+    
     def cleanup(self):
         """清理资源"""
         if self.renderer:

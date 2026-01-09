@@ -5,8 +5,7 @@
 
 import logging
 from typing import Optional
-
-from PyQt5.QtCore import QObject, QPoint
+from PyQt5.QtCore import QObject, QPoint, QTimer
 from PyQt5.QtWidgets import QMenu
 
 from ..workers.move_worker import MoveWorker
@@ -22,7 +21,7 @@ class EventManager(QObject):
     职责：
     - 处理鼠标按下事件
     - 处理鼠标释放事件
-    - 处理鼠标移动事件
+    - 处理鼠标移动事件（包括 Live2D 头部和眼睛跟踪）
     - 处理鼠标双击事件
     - 处理右键菜单
     - 管理窗口移动
@@ -47,6 +46,32 @@ class EventManager(QObject):
         # 移动相关
         self.move_worker: Optional[MoveWorker] = None
         self.drag_start_position: Optional[QPoint] = None
+        
+        # Live2D 头部和眼睛跟踪相关
+        self._live2d_tracking_enabled = True  # 是否启用跟踪
+        self._head_sensitivity = 30.0  # 头部转动灵敏度（角度）
+        self._eye_sensitivity = 1.0   # 眼睛转动灵敏度
+        self._body_sensitivity = 0.5  # 身体转动灵敏度
+        self._smooth_factor = 0.1     # 平滑因子（0.0-1.0，越小越平滑）
+        
+        # 当前头部和眼睛的角度
+        self._current_head_angle_x = 0.0
+        self._current_head_angle_y = 0.0
+        self._current_eye_angle_x = 0.0
+        self._current_eye_angle_y = 0.0
+        self._current_body_angle_x = 0.0
+        
+        # 目标角度
+        self._target_head_angle_x = 0.0
+        self._target_head_angle_y = 0.0
+        self._target_eye_angle_x = 0.0
+        self._target_eye_angle_y = 0.0
+        self._target_body_angle_x = 0.0
+        
+        # 平滑更新定时器
+        self._smooth_timer = QTimer(self)
+        self._smooth_timer.timeout.connect(self._smooth_update_live2d)
+        self._smooth_timer.start(16)  # 60 FPS
     
     def set_managers(self, render_manager, state_manager, bubble_manager, screenshot_manager):
         """
@@ -99,13 +124,118 @@ class EventManager(QObject):
         Args:
             event: 鼠标事件
         """
+        # 始终处理 Live2D 头部和眼睛跟踪（即使不在拖拽）
+        if self._live2d_tracking_enabled and self.render_manager:
+            self._update_live2d_tracking(event)
+        
         if self.drag_start_position:
-            # 委托给渲染器处理（用于 Live2D 注视效果）
+            # 窗口移动时委托给渲染器处理
             rel_x = event.x() / self.parent.width()
             rel_y = event.y() / self.parent.height()
             
             if self.render_manager:
                 self.render_manager.handle_mouse_move(rel_x, rel_y)
+    
+    def _update_live2d_tracking(self, event):
+        """
+        更新 Live2D 头部和眼睛跟踪
+        
+        Args:
+            event: 鼠标事件
+        """
+        # 计算鼠标在窗口中的相对位置（-1.0 到 1.0）
+        rel_x = (event.x() / self.parent.width()) * 2.0 - 1.0
+        rel_y = (event.y() / self.parent.height()) * 2.0 - 1.0
+        
+        # 计算目标角度
+        self._target_head_angle_x = rel_x * self._head_sensitivity
+        self._target_head_angle_y = rel_y * self._head_sensitivity
+        self._target_eye_angle_x = rel_x * self._eye_sensitivity
+        self._target_eye_angle_y = rel_y * self._eye_sensitivity
+        self._target_body_angle_x = rel_x * self._body_sensitivity * self._head_sensitivity
+        
+        # 限制角度范围
+        self._target_head_angle_x = max(-30.0, min(30.0, self._target_head_angle_x))
+        self._target_head_angle_y = max(-30.0, min(30.0, self._target_head_angle_y))
+        self._target_eye_angle_x = max(-1.0, min(1.0, self._target_eye_angle_x))
+        self._target_eye_angle_y = max(-1.0, min(1.0, self._target_eye_angle_y))
+        self._target_body_angle_x = max(-15.0, min(15.0, self._target_body_angle_x))
+    
+    def _smooth_update_live2d(self):
+        """
+        平滑更新 Live2D 头部和眼睛角度
+        """
+        # 使用线性插值平滑过渡
+        self._current_head_angle_x += (self._target_head_angle_x - self._current_head_angle_x) * self._smooth_factor
+        self._current_head_angle_y += (self._target_head_angle_y - self._current_head_angle_y) * self._smooth_factor
+        self._current_eye_angle_x += (self._target_eye_angle_x - self._current_eye_angle_x) * self._smooth_factor
+        self._current_eye_angle_y += (self._target_eye_angle_y - self._current_eye_angle_y) * self._smooth_factor
+        self._current_body_angle_x += (self._target_body_angle_x - self._current_body_angle_x) * self._smooth_factor
+        
+        # 应用到 Live2D 渲染器
+        if self.render_manager and hasattr(self.render_manager, 'set_live2d_parameters'):
+            self.render_manager.set_live2d_parameters(
+                head_angle_x=self._current_head_angle_x,
+                head_angle_y=self._current_head_angle_y,
+                eye_angle_x=self._current_eye_angle_x,
+                eye_angle_y=self._current_eye_angle_y,
+                body_angle_x=self._current_body_angle_x
+            )
+    
+    def set_tracking_enabled(self, enabled: bool):
+        """
+        设置是否启用 Live2D 跟踪
+        
+        Args:
+            enabled: 是否启用
+        """
+        self._live2d_tracking_enabled = enabled
+        if not enabled:
+            # 禁用时重置所有角度
+            self._target_head_angle_x = 0.0
+            self._target_head_angle_y = 0.0
+            self._target_eye_angle_x = 0.0
+            self._target_eye_angle_y = 0.0
+            self._target_body_angle_x = 0.0
+    
+    def set_tracking_sensitivity(self, head: float = None, eye: float = None, body: float = None, smooth: float = None):
+        """
+        设置跟踪灵敏度
+        
+        Args:
+            head: 头部转动灵敏度
+            eye: 眼睛转动灵敏度
+            body: 身体转动灵敏度
+            smooth: 平滑因子（0.0-1.0）
+        """
+        if head is not None:
+            self._head_sensitivity = max(0.0, min(60.0, head))
+        if eye is not None:
+            self._eye_sensitivity = max(0.0, min(5.0, eye))
+        if body is not None:
+            self._body_sensitivity = max(0.0, min(2.0, body))
+        if smooth is not None:
+            self._smooth_factor = max(0.01, min(1.0, smooth))
+    
+    def get_tracking_status(self) -> dict:
+        """
+        获取当前跟踪状态
+        
+        Returns:
+            dict: 包含跟踪状态信息的字典
+        """
+        return {
+            'enabled': self._live2d_tracking_enabled,
+            'head_sensitivity': self._head_sensitivity,
+            'eye_sensitivity': self._eye_sensitivity,
+            'body_sensitivity': self._body_sensitivity,
+            'smooth_factor': self._smooth_factor,
+            'current_head_angle_x': self._current_head_angle_x,
+            'current_head_angle_y': self._current_head_angle_y,
+            'current_eye_angle_x': self._current_eye_angle_x,
+            'current_eye_angle_y': self._current_eye_angle_y,
+            'current_body_angle_x': self._current_body_angle_x,
+        }
     
     def handle_mouse_double_click(self, event):
         """
@@ -323,5 +453,7 @@ class EventManager(QObject):
     def cleanup(self):
         """清理资源"""
         self.stop_move_worker()
+        self._smooth_timer.stop()
+        self._smooth_timer.deleteLater()
         self.drag_start_position = None
         logger.info("事件管理器已清理")
