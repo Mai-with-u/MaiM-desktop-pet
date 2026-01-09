@@ -41,6 +41,11 @@ class RenderManager:
         self.live2d_model_path: str = ""
         self.allow_switch: bool = True
         
+        # Live2D 自定义缩放和偏移参数
+        self.custom_scale: float = 0.0
+        self.custom_offset_x: float = 0.0
+        self.custom_offset_y: float = 0.0
+        
         # 加载配置
         self.load_config()
         
@@ -73,12 +78,21 @@ class RenderManager:
                 self.live2d_model_path = getattr(live2d_config, 'model_path', '')
                 # 覆盖使用 Live2D 的设置（优先使用 live2d.enabled）
                 self.use_live2d = getattr(live2d_config, 'enabled', self.use_live2d)
+                # 加载自定义缩放和偏移参数
+                self.custom_scale = getattr(live2d_config, 'custom_scale', 0.0)
+                self.custom_offset_x = getattr(live2d_config, 'custom_offset_x', 0.0)
+                self.custom_offset_y = getattr(live2d_config, 'custom_offset_y', 0.0)
             else:
                 self.live2d_model_path = ""
+                self.custom_scale = 0.0
+                self.custom_offset_x = 0.0
+                self.custom_offset_y = 0.0
             
             logger.info(f"加载渲染配置: use_live2d={self.use_live2d}, "
                        f"model_path={self.live2d_model_path}, "
-                       f"allow_switch={self.allow_switch}")
+                       f"allow_switch={self.allow_switch}, "
+                       f"custom_scale={self.custom_scale}, "
+                       f"custom_offset=({self.custom_offset_x}, {self.custom_offset_y})")
         except Exception as e:
             logger.error(f"加载渲染配置失败: {e}")
             # 使用默认配置
@@ -95,7 +109,12 @@ class RenderManager:
                 # 检查 Live2D 库是否可用
                 if Live2DRenderer.is_available():
                     try:
-                        self.renderer = Live2DRenderer(self.live2d_model_path)
+                        self.renderer = Live2DRenderer(
+                            self.live2d_model_path,
+                            custom_scale=self.custom_scale,
+                            custom_offset_x=self.custom_offset_x,
+                            custom_offset_y=self.custom_offset_y
+                        )
                         self.current_mode = "live2d"
                         logger.info("使用 Live2D 渲染器")
                         return
@@ -164,7 +183,12 @@ class RenderManager:
                 if not Live2DRenderer.is_available():
                     raise ImportError("Live2D 库不可用")
                 
-                self.renderer = Live2DRenderer(self.live2d_model_path)
+                self.renderer = Live2DRenderer(
+                    self.live2d_model_path,
+                    custom_scale=self.custom_scale,
+                    custom_offset_x=self.custom_offset_x,
+                    custom_offset_y=self.custom_offset_y
+                )
             elif mode == "static":
                 self.renderer = StaticRenderer()
             else:

@@ -25,16 +25,25 @@ class Live2DRenderer(IRenderer):
     _live2d_available = None
     _live2d_initialized = False
     
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, custom_scale: float = 0.0, 
+                 custom_offset_x: float = 0.0, custom_offset_y: float = 0.0):
         """
         初始化 Live2D 渲染器
         
         Args:
             model_path: Live2D 模型文件路径（.model3.json）
+            custom_scale: 自定义缩放比例（0 表示自动计算）
+            custom_offset_x: 自定义水平偏移
+            custom_offset_y: 自定义垂直偏移
         """
         self.model_path = model_path
         self.widget: Live2DWidget = None
         self.timer: QTimer = None
+        
+        # 自定义缩放和偏移参数
+        self.custom_scale = custom_scale
+        self.custom_offset_x = custom_offset_x
+        self.custom_offset_y = custom_offset_y
         
         # 检查 Live2D 库是否可用
         if Live2DRenderer._live2d_available is None:
@@ -97,8 +106,14 @@ class Live2DRenderer(IRenderer):
         
         logger.info(f"附加 Live2D 渲染器到父控件，初始大小: {parent.width()}x{parent.height()}")
         
-        # 创建 Live2D Widget
-        self.widget = Live2DWidget(self.model_path, parent)
+        # 创建 Live2D Widget，传递自定义缩放和偏移参数
+        self.widget = Live2DWidget(
+            self.model_path, 
+            parent,
+            custom_scale=self.custom_scale,
+            custom_offset_x=self.custom_offset_x,
+            custom_offset_y=self.custom_offset_y
+        )
         
         # 设置初始大小
         self.update_size(parent.width(), parent.height())
@@ -153,15 +168,31 @@ class Live2DRenderer(IRenderer):
             # 调整视口大小
             self.widget.model.Resize(width, height)
             
-            # 根据窗口大小动态计算缩放比例
-            scale_factor = self._calculate_scale_factor(width, height)
+            # 使用自定义缩放或自动计算缩放
+            if self.custom_scale > 0:
+                scale_factor = self.custom_scale
+                logger.debug(f"使用自定义缩放: {scale_factor}")
+            else:
+                scale_factor = self._calculate_scale_factor(width, height)
+                logger.debug(f"使用自动缩放: {scale_factor}")
+            
             self.widget.model.SetScale(scale_factor)
             
-            # 调整垂直偏移以适应不同高度
-            offset_y = self._calculate_offset_y(height)
-            self.widget.model.SetOffset(0, offset_y)
+            # 使用自定义偏移或自动计算偏移
+            if self.custom_offset_x != 0 or self.custom_offset_y != 0:
+                # 使用自定义偏移
+                offset_x = self.custom_offset_x
+                offset_y = self.custom_offset_y
+                logger.debug(f"使用自定义偏移: ({offset_x}, {offset_y})")
+            else:
+                # 自动计算偏移
+                offset_x = 0.0
+                offset_y = self._calculate_offset_y(height)
+                logger.debug(f"使用自动偏移: ({offset_x}, {offset_y})")
             
-            logger.debug(f"Live2D 渲染器大小更新: {width}x{height}, 缩放: {scale_factor}, 偏移: {offset_y}")
+            self.widget.model.SetOffset(offset_x, offset_y)
+            
+            logger.info(f"Live2D 渲染器大小更新: {width}x{height}, 缩放: {scale_factor}, 偏移: ({offset_x}, {offset_y})")
     
     def _calculate_scale_factor(self, width: int, height: int) -> float:
         """
@@ -341,11 +372,19 @@ class Live2DWidget(QOpenGLWidget):
     负责实际的 Live2D 模型渲染
     """
     
-    def __init__(self, model_path: str, parent=None):
+    def __init__(self, model_path: str, parent=None,
+                 custom_scale: float = 0.0,
+                 custom_offset_x: float = 0.0,
+                 custom_offset_y: float = 0.0):
         super().__init__(parent)
         self.model_path = model_path
         self.model = None
         self.initialized = False
+        
+        # 自定义缩放和偏移参数
+        self.custom_scale = custom_scale
+        self.custom_offset_x = custom_offset_x
+        self.custom_offset_y = custom_offset_y
         
         # 鼠标位置
         self.mouse_x = 400
@@ -408,8 +447,25 @@ class Live2DWidget(QOpenGLWidget):
         self.model.CreateRenderer()
         
         # 设置模型显示位置和大小
-        self.model.SetScale(1.5)
-        self.model.SetOffset(0, -0.2)
+        # 使用自定义缩放或默认值
+        if self.custom_scale > 0:
+            scale_factor = self.custom_scale
+            logger.debug(f"初始化使用自定义缩放: {scale_factor}")
+        else:
+            scale_factor = 1.5  # 默认缩放
+            logger.debug(f"初始化使用默认缩放: {scale_factor}")
+        self.model.SetScale(scale_factor)
+        
+        # 使用自定义偏移或默认值
+        if self.custom_offset_x != 0 or self.custom_offset_y != 0:
+            offset_x = self.custom_offset_x
+            offset_y = self.custom_offset_y
+            logger.debug(f"初始化使用自定义偏移: ({offset_x}, {offset_y})")
+        else:
+            offset_x = 0.0
+            offset_y = -0.2  # 默认偏移
+            logger.debug(f"初始化使用默认偏移: ({offset_x}, {offset_y})")
+        self.model.SetOffset(offset_x, offset_y)
         
         # 启用自动眨眼
         self.model.SetAutoBlink(True)

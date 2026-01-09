@@ -26,6 +26,9 @@ class Live2DConfig(BaseModel):
     physics_enabled: Optional[bool] = True
     render_quality: Optional[str] = "medium"
     gpu_acceleration: Optional[bool] = True
+    custom_scale: Optional[float] = 0.0
+    custom_offset_x: Optional[float] = 0.0
+    custom_offset_y: Optional[float] = 0.0
 
 
 class AnimationConfig(BaseModel):

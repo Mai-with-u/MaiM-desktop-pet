@@ -1,565 +1,641 @@
-# Pet.py 解构重构任务清单
+# pet.py 解构重构任务清单
 
-## 文档概述
-
-本文档详细记录了 `src/frontend/pet.py` 的解构重构任务清单。
-
-**创建日期：** 2026-01-08  
-**最后更新：** 2026-01-08  
-**参考文档：** [a1-LIVE2D_REFACTORING_PLAN.md](./a1-LIVE2D_REFACTORING_PLAN.md)
+**创建日期：** 2026-01-10  
+**最后更新：** 2026-01-10
 
 ---
 
-## 一、当前代码问题分析
+## 一、当前代码分析
 
-### 1.1 主要问题
+### 1.1 代码统计
 
-#### 问题 1：单一职责原则严重违反
-- **现象**：`DesktopPet` 类承担了窗口、托盘、气泡、截图、移动、事件、渲染、状态、配置等 9+ 个职责
-- **影响**：代码耦合度高，难以维护和测试，修改一个功能可能影响其他功能
+| 指标 | 数值 |
+|------|------|
+| 总行数 | ~400 行 |
+| 类数量 | 2 个（DesktopPet, PetScreenshotSelector） |
+| 方法数量 | ~30 个 |
+| 职责数量 | 10+ 个 |
 
-#### 问题 2：渲染架构僵化
-- **现象**：使用静态 QLabel 显示，无法支持动态动画
-- **影响**：无法扩展到 Live2D，难以切换不同的显示模式
+### 1.2 当前职责清单
 
-#### 问题 3：子窗口管理混乱
-- **现象**：所有子窗口（气泡、菜单、输入框）都依赖 DesktopPet 实例
-- **影响**：难以测试和复用子窗口组件，窗口位置同步逻辑分散
+`DesktopPet` 类承担了以下职责：
 
-#### 问题 4：事件处理缺乏分层
-- **现象**：所有事件处理都在 DesktopPet 类中，业务逻辑与 UI 逻辑混合
-- **影响**：事件处理逻辑复杂，难以追踪事件流，缺乏统一的状态管理
+1. **UI 初始化** - 窗口属性设置、大小计算、位置设置
+2. **托盘图标管理** - 托盘菜单创建、终端控制、锁定控制
+3. **气泡系统集成** - 消息气泡、输入气泡、右键菜单
+4. **截图功能** - 区域截图、截图处理、回调
+5. **移动管理** - 鼠标拖动、工作线程、位置同步
+6. **交互事件处理** - 鼠标点击、双击、右键菜单
+7. **窗口锁定** - 锁定/解锁、状态管理
+8. **窥屏功能** - 定时截图、窥屏控制
+9. **缩放功能** - 动态缩放、配置更新
+10. **动画渲染** - 静态图片显示（当前仅支持静态）
 
-### 1.2 代码结构分析
+### 1.3 外部依赖
 
-```python
-DesktopPet 类（约 600+ 行）
-├── __init__()                    # 初始化（100+ 行）
-│   ├── init_ui()                # UI 初始化
-│   ├── init_tray_icon()         # 托盘图标初始化
-│   ├── 气泡系统初始化
-│   ├── 快捷键初始化
-│   └── 定时器初始化
-├── 窗口管理（50+ 行）
-│   ├── show_pet() / hide_pet()
-│   └── 初始位置设置
-├── 托盘管理（100+ 行）
-│   ├── init_tray_icon()
-│   ├── toggle_console()
-│   ├── show_console() / hide_console()
-│   ├── update_terminal_menu_state()
-│   └── safe_quit()
-├── 气泡系统（80+ 行）
-│   ├── show_message()
-│   ├── del_message_bubble()
-│   ├── show_chat_input()
-│   └── handle_user_input()
-├── 截图功能（80+ 行）
-│   ├── start_screenshot()
-│   ├── handle_screenshot()
-│   ├── start_peeking()
-│   ├── stop_peeking()
-│   └── _on_peek_timer()
-├── 移动管理（60+ 行）
-│   ├── mousePressEvent()
-│   ├── mouseReleaseEvent()
-│   └── _on_position_changed()
-├── 事件处理（30+ 行）
-│   ├── mouseDoubleClickEvent()
-│   └── contextMenuEvent()
-├── 渲染（20+ 行）
-│   └── init_ui() 中的图片加载
-├── 状态管理（50+ 行）
-│   ├── lock_window()
-│   ├── unlock_window()
-│   ├── toggle_lock()
-│   └── hide_all_bubble()
-└── 配置管理（30+ 行）
-    ├── change_scale()
-    └── 配置文件读写
+```
+├── PyQt5 (UI 框架)
+│   ├── QtWidgets
+│   ├── QtCore
+│   └── QtGui
+├── src.core.chat (聊天工具)
+├── src.frontend.signals (信号总线)
+├── src.frontend.bubble_* (气泡组件)
+│   ├── bubble_menu.py
+│   ├── bubble_speech.py
+│   └── bubble_input.py
+├── src.frontend.ScreenshotSelector (截图组件)
+├── src.util.logger (日志)
+├── src.util.image_util (图片工具)
+├── config (配置加载)
+├── asyncio (异步)
+├── platform (平台检测)
+├── tomli/tomli_w (配置文件读写)
+└── win32gui (Windows 特定功能)
 ```
 
 ---
 
-## 二、解构重构方案
+## 二、重构目标
 
-### 2.1 整体架构设计
+### 2.1 核心目标
+
+1. **职责分离** - 将 10+ 个职责拆分为独立的管理器
+2. **代码解耦** - 减少类之间的依赖关系
+3. **可扩展性** - 支持未来添加 Live2D 等高级功能
+4. **可测试性** - 提高单元测试覆盖率
+5. **可维护性** - 降低代码复杂度，提高可读性
+
+### 2.2 架构设计
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│              Presentation Layer (UI 层)                │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │  DesktopPet  │  │ BubbleSystem │  │ TrayManager  │  │
-│  │   (窗口)     │  │  (气泡系统)   │  │  (托盘管理)  │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-│           │                 │                 │        │
-└───────────┼─────────────────┼─────────────────┼────────┘
-            │                 │                 │
-┌───────────┼─────────────────┼─────────────────┼────────┐
-│           ▼                 ▼                 ▼        │
-│         ┌──────────────────────────────────────┐       │
-│         │      Presentation Layer (Core)       │       │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │RenderManager │  │EventManager  │  │ StateManager │ │
-│  │  (渲染管理)  │  │  (事件管理)  │  │  (状态管理)  │ │
-│  └──────────────┘  └──────────────┘  └──────────────┘ │
-│           │                 │                 │        │
-│           ▼                 ▼                 ▼        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │   IRenderer  │  │ IEventHandler│  │   IState     │ │
-│  │  (渲染接口)  │  │ (事件接口)   │  │  (状态接口)  │ │
-│  └──────────────┘  └──────────────┘  └──────────────┘ │
-└──────────────────────────────────────────────────────┘
-            │                 │                 │
-┌───────────┼─────────────────┼─────────────────┼────────┐
-│           ▼                 ▼                 ▼        │
-│         ┌──────────────────────────────────────┐       │
-│            Business Layer (业务层)            │       │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │ Live2DRenderer│ │StaticRenderer│ │AnimationController│ │
-│  └──────────────┘  └──────────────┘  └──────────────┘ │
-│           │                 │                 │        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │  Live2DModel │  │ ImageLoader  │ │ MotionManager │ │
-│  └──────────────┘  └──────────────┘  └──────────────┘ │
-└──────────────────────────────────────────────────────┘
+DesktopPet (主窗口 - 简化版)
+├── RenderManager (渲染管理器)
+│   ├── StaticRenderer (静态图片渲染器)
+│   └── Live2DRenderer (Live2D 渲染器 - 未来)
+├── EventManager (事件管理器)
+│   ├── 鼠标事件处理
+│   ├── 键盘事件处理
+│   └── 事件分发
+├── StateManager (状态管理器)
+│   ├── 窗口状态（锁定/解锁）
+│   ├── 终端状态
+│   └── 窥屏状态
+├── BubbleSystem (气泡系统)
+│   ├── 消息气泡管理
+│   ├── 输入气泡管理
+│   └── 右键菜单
+├── TrayManager (托盘管理器)
+│   ├── 托盘图标
+│   ├── 托盘菜单
+│   └── 状态同步
+├── ScreenshotSystem (截图系统)
+│   ├── 区域截图
+│   ├── 截图处理
+│   └── 回调管理
+└── ScaleManager (缩放管理器)
+    ├── 动态缩放
+    └── 配置更新
 ```
-
-### 2.2 职责分离方案
-
-#### 分离 1：渲染管理（RenderManager）
-**从 DesktopPet 提取的职责：**
-- 图片加载和显示
-- 渲染模式切换（静态/Live2D）
-- 动画状态设置
-- 表情设置
-- 鼠标移动处理（用于注视效果）
-
-**新建文件：**
-- `src/frontend/core/render/interfaces.py` - 渲染器接口（IRenderer）
-- `src/frontend/core/render/static_renderer.py` - 静态图片渲染器
-- `src/frontend/core/render/live2d_renderer.py` - Live2D 渲染器
-- `src/frontend/core/managers/render_manager.py` - 渲染管理器
-
-#### 分离 2：事件管理（EventManager）
-**从 DesktopPet 提取的职责：**
-- 鼠标按下处理
-- 鼠标释放处理
-- 鼠标移动处理
-- 鼠标双击处理
-- 右键菜单显示
-- 窗口移动管理
-
-**新建文件：**
-- `src/frontend/core/managers/event_manager.py` - 事件管理器
-
-#### 分离 3：状态管理（StateManager）
-**从 DesktopPet 提取的职责：**
-- 窗口锁定/解锁
-- 窗口显示/隐藏
-- 终端显示/隐藏
-- 窥屏状态管理
-- 状态持久化
-
-**新建文件：**
-- `src/frontend/core/managers/state_manager.py` - 状态管理器
-
-#### 分离 4：气泡系统（BubbleSystem）
-**从 DesktopPet 提取的职责：**
-- 消息气泡管理
-- 输入气泡管理
-- 气泡位置同步
-- 气泡显示/隐藏
-
-**新建文件：**
-- `src/frontend/presentation/bubble_system.py` - 气泡系统管理器
-
-#### 分离 5：截图管理（ScreenshotManager）
-**从 DesktopPet 提取的职责：**
-- 区域截图
-- 截图处理
-- 窥屏功能
-- 定时器管理
-
-**新建文件：**
-- `src/frontend/presentation/screenshot_manager.py` - 截图管理器
-
-#### 分离 6：托盘管理（TrayManager）
-**从 DesktopPet 提取的职责：**
-- 系统托盘图标管理
-- 托盘菜单创建
-- 终端控制
-- 退出控制
-
-**新建文件：**
-- `src/frontend/presentation/tray_manager.py` - 托盘管理器
-
-#### 分离 7：主窗口简化（DesktopPet）
-**保留的职责：**
-- 窗口生命周期管理
-- 子窗口容器管理
-- 事件委托
-- 依赖注入
-
-**重构文件：**
-- `src/frontend/pet.py` → `src/frontend/presentation/refactored_pet.py`
 
 ---
 
 ## 三、重构实施计划
 
-### 阶段 1：基础架构准备（1-2 天）
+### 阶段 0：准备工作（预计 1-2 天）
 
-#### 1.1 创建目录结构
-- [ ] 确认现有目录结构
-- [ ] 创建 `src/frontend/core/render/` 目录
-- [ ] 创建 `src/frontend/core/managers/` 目录
-- [ ] 创建 `src/frontend/presentation/` 目录
-- [ ] 创建 `src/frontend/data/` 目录
+#### 任务 0.1：备份现有代码
+- [ ] 创建 `src/frontend/pet.py.backup` 备份文件
+- [ ] 创建 `git commit` 保存当前状态
+- [ ] 编写回归测试用例
 
-#### 1.2 创建接口定义
-- [ ] 创建 `src/frontend/core/render/__init__.py`
-- [ ] 创建 `src/frontend/core/render/interfaces.py`
-  - [ ] 定义 `IRenderer` 抽象基类
-  - [ ] 定义 `initialize()` 方法
-  - [ ] 定义 `attach()` 方法
-  - [ ] 定义 `cleanup()` 方法
-  - [ ] 定义 `set_animation_state()` 方法
-  - [ ] 定义 `set_expression()` 方法
-  - [ ] 定义 `on_mouse_move()` 方法
+#### 任务 0.2：创建新的目录结构
+```
+src/frontend/
+├── core/                    # 核心业务层
+│   ├── __init__.py
+│   ├── managers/            # 管理器
+│   │   ├── __init__.py
+│   │   ├── render_manager.py
+│   │   ├── event_manager.py
+│   │   ├── state_manager.py
+│   │   ├── tray_manager.py
+│   │   ├── bubble_system.py
+│   │   ├── screenshot_system.py
+│   │   └── scale_manager.py
+│   └── render/              # 渲染器
+│       ├── __init__.py
+│       ├── interfaces.py
+│       ├── static_renderer.py
+│       └── live2d_renderer.py (未来)
+├── presentation/            # UI 层
+│   ├── __init__.py
+│   └── refactored_pet.py
+├── components/              # 现有组件（保持不变）
+│   ├── bubble_menu.py
+│   ├── bubble_speech.py
+│   ├── bubble_input.py
+│   └── ScreenshotSelector.py
+└── legacy/                  # 旧代码（保留）
+    └── pet.py
+```
 
-#### 1.3 创建管理器框架
-- [ ] 创建 `src/frontend/core/managers/__init__.py`
-- [ ] 创建 `src/frontend/core/managers/render_manager.py` 框架
-- [ ] 创建 `src/frontend/core/managers/event_manager.py` 框架
-- [ ] 创建 `src/frontend/core/managers/state_manager.py` 框架
+#### 任务 0.3：准备基础框架
+- [ ] 创建 `core/managers/__init__.py`
+- [ ] 创建 `core/render/__init__.py`
+- [ ] 创建 `presentation/__init__.py`
+- [ ] 编写接口定义文件
 
-#### 1.4 创建子管理器框架
-- [ ] 创建 `src/frontend/presentation/__init__.py`
-- [ ] 创建 `src/frontend/presentation/bubble_system.py` 框架
-- [ ] 创建 `src/frontend/presentation/screenshot_manager.py` 框架
-- [ ] 创建 `src/frontend/presentation/tray_manager.py` 框架
+#### 任务 0.4：编写单元测试框架
+- [ ] 安装 pytest
+- [ ] 创建 `tests/` 目录结构
+- [ ] 编写测试配置文件 `pytest.ini`
 
-#### 1.5 备份现有代码
-- [ ] 备份 `src/frontend/pet.py` → `src/frontend/pet.py.backup`
-- [ ] 备份 `config.toml` → `config.toml.backup`
+---
 
-### 阶段 2：渲染系统实现（2-3 天）
+### 阶段 1：渲染层重构（预计 2-3 天）
 
-#### 2.1 实现静态渲染器
-- [ ] 创建 `src/frontend/core/render/static_renderer.py`
-  - [ ] 实现 `StaticRenderer` 类
-  - [ ] 实现 `initialize()` 方法
-  - [ ] 实现 `attach()` 方法
-  - [ ] 实现 `cleanup()` 方法
-  - [ ] 实现 `set_animation_state()` 方法（空实现或警告）
-  - [ ] 实现 `set_expression()` 方法（空实现或警告）
-  - [ ] 实现 `on_mouse_move()` 方法（空实现）
-  - [ ] 支持图片缩放（使用 `scale_factor`）
-  - [ ] 支持图片缓存（可选）
+#### 任务 1.1：创建渲染器接口
+**文件：** `src/frontend/core/render/interfaces.py`
 
-#### 2.2 实现 Live2D 渲染器框架
-- [ ] 创建 `src/frontend/core/render/live2d_renderer.py`
-  - [ ] 实现 `Live2DRenderer` 类
-  - [ ] 实现 `initialize()` 方法框架
-  - [ ] 实现 `attach()` 方法框架
-  - [ ] 实现 `cleanup()` 方法框架
-  - [ ] 实现 `set_animation_state()` 方法框架
-  - [ ] 实现 `set_expression()` 方法框架
-  - [ ] 实现 `on_mouse_move()` 方法框架
-  - [ ] 添加 Live2D 库检测逻辑
-  - [ ] 添加优雅降级机制（Live2D 不可用时使用静态渲染）
+**任务清单：**
+- [ ] 定义 `IRenderer` 抽象基类
+  - [ ] `initialize()` - 初始化渲染器
+  - [ ] `attach(parent)` - 附加到父控件
+  - [ ] `cleanup()` - 清理资源
+  - [ ] `set_animation_state(state)` - 设置动画状态
+  - [ ] `set_expression(expression)` - 设置表情
+  - [ ] `on_mouse_move(x, y)` - 鼠标移动回调
+  - [ ] `set_scale(scale)` - 设置缩放比例
+  - [ ] `set_offset(x, y)` - 设置位置偏移
 
-#### 2.3 实现渲染管理器
-- [ ] 完善 `src/frontend/core/managers/render_manager.py`
-  - [ ] 实现 `RenderManager` 类
-  - [ ] 实现渲染器创建逻辑
-  - [ ] 实现渲染模式切换
-  - [ ] 实现动画状态设置
-  - [ ] 实现表情设置
-  - [ ] 实现鼠标移动处理
-  - [ ] 添加配置加载功能
-  - [ ] 添加错误处理
+**验收标准：**
+- 接口定义清晰
+- 所有方法都有文档字符串
+- 通过类型检查
 
-#### 2.4 测试渲染系统
-- [ ] 测试静态渲染器初始化
-- [ ] 测试静态渲染器图片显示
-- [ ] 测试渲染器切换
-- [ ] 测试动画状态设置
-- [ ] 测试表情设置
+#### 任务 1.2：实现静态图片渲染器
+**文件：** `src/frontend/core/render/static_renderer.py`
 
-### 阶段 3：管理器实现（3-4 天）
+**任务清单：**
+- [ ] 实现 `StaticRenderer` 类
+  - [ ] `__init__(image_path, scale_factor)`
+  - [ ] `initialize()` - 加载图片
+  - [ ] `attach(parent)` - 创建 QLabel 并附加
+  - [ ] `cleanup()` - 清理 QLabel
+  - [ ] `set_scale(scale)` - 更新缩放
+  - [ ] `set_offset(x, y)` - 更新偏移
+  - [ ] 其他方法返回空实现或警告
 
-#### 3.1 实现事件管理器
-- [ ] 完善 `src/frontend/core/managers/event_manager.py`
-  - [ ] 实现 `EventManager` 类
-  - [ ] 实现鼠标按下处理
-  - [ ] 实现鼠标释放处理
-  - [ ] 实现鼠标移动处理
-  - [ ] 实现鼠标双击处理
-  - [ ] 实现右键菜单显示
-  - [ ] 实现窗口移动管理
-  - [ ] 迁移 `MoveWorker` 线程
+**验收标准：**
+- 可以正确显示静态图片
+- 支持缩放和偏移
+- 资源正确清理
 
-#### 3.2 实现状态管理器
-- [ ] 完善 `src/frontend/core/managers/state_manager.py`
-  - [ ] 实现 `StateManager` 类
-  - [ ] 实现窗口锁定/解锁
-  - [ ] 实现窗口显示/隐藏
-  - [ ] 实现终端显示/隐藏
-  - [ ] 实现窥屏状态管理
-  - [ ] 实现状态持久化
-  - [ ] 实现状态通知机制
+#### 任务 1.3：实现渲染管理器
+**文件：** `src/frontend/core/managers/render_manager.py`
 
-#### 3.3 实现气泡系统
-- [ ] 完善 `src/frontend/presentation/bubble_system.py`
-  - [ ] 实现 `BubbleSystem` 类
-  - [ ] 整合 `SpeechBubbleList`
-  - [ ] 整合 `BubbleInput`
-  - [ ] 整合 `BubbleMenu`
-  - [ ] 实现气泡位置同步
-  - [ ] 实现气泡显示/隐藏
-  - [ ] 订阅窗口位置变化事件
+**任务清单：**
+- [ ] 实现 `RenderManager` 类
+  - [ ] `__init__(parent, config)`
+  - [ ] `load_config()` - 加载配置
+  - [ ] `create_renderer()` - 创建渲染器
+  - [ ] `attach_to(parent)` - 附加到父控件
+  - [ ] `switch_mode(mode)` - 切换渲染模式
+  - [ ] `set_animation_state(state)` - 设置动画状态
+  - [ ] `set_expression(expression)` - 设置表情
+  - [ ] `handle_mouse_move(x, y)` - 处理鼠标移动
+  - [ ] `set_scale(scale)` - 设置缩放
+  - [ ] `set_offset(x, y)` - 设置偏移
 
-#### 3.4 实现截图管理器
-- [ ] 完善 `src/frontend/presentation/screenshot_manager.py`
-  - [ ] 实现 `ScreenshotManager` 类
-  - [ ] 整合 `ScreenshotSelector`
-  - [ ] 实现截图功能
-  - [ ] 实现窥屏功能
-  - [ ] 实现定时器管理
-  - [ ] 实现快捷键处理
+**验收标准：**
+- 可以正确创建和管理渲染器
+- 支持模式切换（静态/Live2D）
+- 配置加载正确
 
-#### 3.5 实现托盘管理器
-- [ ] 完善 `src/frontend/presentation/tray_manager.py`
-  - [ ] 实现 `TrayManager` 类
-  - [ ] 实现系统托盘图标管理
-  - [ ] 实现托盘菜单创建
-  - [ ] 实现终端控制
-  - [ ] 实现退出控制
-  - [ ] 实现菜单样式加载
+#### 任务 1.4：编写渲染层单元测试
+**文件：** `tests/test_render_layer.py`
 
-#### 3.6 测试管理器
-- [ ] 测试事件管理器
-- [ ] 测试状态管理器
-- [ ] 测试气泡系统
-- [ ] 测试截图管理器
-- [ ] 测试托盘管理器
+**任务清单：**
+- [ ] 测试 `IRenderer` 接口
+- [ ] 测试 `StaticRenderer` 功能
+  - [ ] 初始化测试
+  - [ ] 缩放测试
+  - [ ] 偏移测试
+  - [ ] 资源清理测试
+- [ ] 测试 `RenderManager` 功能
+  - [ ] 创建渲染器测试
+  - [ ] 模式切换测试
+  - [ ] 配置加载测试
 
-### 阶段 4：主窗口重构（2-3 天）
+**验收标准：**
+- 测试覆盖率 > 90%
+- 所有测试通过
 
-#### 4.1 创建简化版主窗口
-- [ ] 创建 `src/frontend/presentation/refactored_pet.py`
-  - [ ] 实现 `DesktopPet` 类（简化版）
-  - [ ] 实现窗口初始化
-  - [ ] 实现依赖注入
-  - [ ] 实现事件委托
-  - [ ] 实现子系统初始化
-  - [ ] 实现渲染容器
+---
 
-#### 4.2 迁移窗口管理逻辑
-- [ ] 迁移窗口属性设置
-- [ ] 迁移窗口标志设置
-- [ ] 迁移窗口大小设置
-- [ ] 迁移透明背景设置
-- [ ] 迁移初始位置设置
+### 阶段 2：管理器重构（预计 3-4 天）
 
-#### 4.3 迁移子窗口管理
-- [ ] 迁移气泡系统集成
-- [ ] 迁移截图系统集成
-- [ ] 迁移托盘系统集成
-- [ ] 迁移右键菜单
+#### 任务 2.1：实现状态管理器
+**文件：** `src/frontend/core/managers/state_manager.py`
 
-#### 4.4 迁移功能逻辑
-- [ ] 迁移消息显示逻辑
-- [ ] 迁移缩放调整逻辑
-- [ ] 迁移配置文件读写
-- [ ] 迁移定时器逻辑
+**任务清单：**
+- [ ] 实现 `StateManager` 类
+  - [ ] `__init__(parent)`
+  - [ ] `is_locked()` - 检查锁定状态
+  - [ ] `is_visible()` - 检查可见状态
+  - [ ] `is_console_visible()` - 检查终端状态
+  - [ ] `is_peeking()` - 检查窥屏状态
+  - [ ] `lock_window()` - 锁定窗口
+  - [ ] `unlock_window()` - 解锁窗口
+  - [ ] `toggle_lock()` - 切换锁定
+  - [ ] `show_console()` - 显示终端
+  - [ ] `hide_console()` - 隐藏终端
+  - [ ] `toggle_console()` - 切换终端
+  - [ ] `start_peeking()` - 开始窥屏
+  - [ ] `stop_peeking()` - 停止窥屏
+  - [ ] `toggle_peeking()` - 切换窥屏
 
-#### 4.5 测试主窗口
-- [ ] 测试窗口初始化
-- [ ] 测试窗口显示/隐藏
-- [ ] 测试窗口拖动
-- [ ] 测试窗口锁定/解锁
-- [ ] 测试所有功能
+**验收标准：**
+- 所有状态管理正确
+- 窗口属性切换正确
+- 终端控制正确（Windows 平台）
+- 窥屏功能正常
 
-### 阶段 5：集成测试（1-2 天）
+#### 任务 2.2：实现事件管理器
+**文件：** `src/frontend/core/managers/event_manager.py`
 
-#### 5.1 功能测试
-- [ ] 测试程序启动
-- [ ] 测试窗口显示
-- [ ] 测试窗口拖动
-- [ ] 测试窗口锁定
-- [ ] 测试消息显示
-- [ ] 测试输入框
-- [ ] 测试截图功能
-- [ ] 测试托盘功能
-- [ ] 测试右键菜单
-- [ ] 测试缩放调整
+**任务清单：**
+- [ ] 实现 `EventManager` 类
+  - [ ] `__init__(parent, render_manager, state_manager)`
+  - [ ] `handle_mouse_press(event)` - 鼠标按下
+  - [ ] `handle_mouse_release(event)` - 鼠标释放
+  - [ ] `handle_mouse_move(event)` - 鼠标移动
+  - [ ] `handle_mouse_double_click(event)` - 鼠标双击
+  - [ ] `handle_context_menu(event)` - 右键菜单
+  - [ ] `start_move_worker()` - 启动移动线程
+  - [ ] `stop_move_worker()` - 停止移动线程
 
-#### 5.2 集成测试
-- [ ] 测试管理器之间的协作
+**迁移清单：**
+- [ ] 迁移 `mousePressEvent` 逻辑
+- [ ] 迁移 `mouseReleaseEvent` 逻辑
+- [ ] 迁移 `mouseMoveEvent` 逻辑
+- [ ] 迁移 `mouseDoubleClickEvent` 逻辑
+- [ ] 迁移 `contextMenuEvent` 逻辑
+- [ ] 迁移 `MoveWorker` 线程逻辑
+
+**验收标准：**
+- 所有事件处理正确
+- 鼠标拖动流畅
+- 双击功能正常
+- 右键菜单正常显示
+
+#### 任务 2.3：实现托盘管理器
+**文件：** `src/frontend/core/managers/tray_manager.py`
+
+**任务清单：**
+- [ ] 实现 `TrayManager` 类
+  - [ ] `__init__(parent)`
+  - [ ] `init_tray_icon()` - 初始化托盘图标
+  - [ ] `create_tray_menu()` - 创建托盘菜单
+  - [ ] `update_terminal_menu_state()` - 更新终端按钮
+  - [ ] `update_lock_menu_state()` - 更新锁定按钮
+  - [ ] `toggle_console()` - 切换终端显示
+  - [ ] `toggle_lock()` - 切换锁定状态
+  - [ ] `show_pet()` - 显示宠物
+  - [ ] `hide_pet()` - 隐藏宠物
+  - [ ] `safe_quit()` - 安全退出
+
+**迁移清单：**
+- [ ] 迁移 `init_tray_icon` 逻辑
+- [ ] 迁移终端控制逻辑
+- [ ] 迁移锁定控制逻辑
+- [ ] 迁移退出逻辑
+
+**验收标准：**
+- 托盘图标正常显示
+- 托盘菜单功能正常
+- 终端控制正常
+- 锁定控制正常
+
+#### 任务 2.4：实现气泡系统
+**文件：** `src/frontend/core/managers/bubble_system.py`
+
+**任务清单：**
+- [ ] 实现 `BubbleSystem` 类
+  - [ ] `__init__(parent)`
+  - [ ] `show_message(text, type, pixmap)` - 显示消息
+  - [ ] `show_input()` - 显示输入框
+  - [ ] `hide_all()` - 隐藏所有气泡
+  - [ ] `update_position()` - 更新气泡位置
+  - [ ] `handle_user_input(text)` - 处理用户输入
+
+**迁移清单：**
+- [ ] 迁移 `chat_bubbles` 管理
+- [ ] 迁移 `bubble_menu` 管理
+- [ ] 迁移 `bubble_input` 管理
+- [ ] 迁移 `show_message` 逻辑
+- [ ] 迁移 `show_chat_input` 逻辑
+- [ ] 迁移 `handle_user_input` 逻辑
+- [ ] 迁移右键菜单创建逻辑
+
+**验收标准：**
+- 消息气泡正常显示
+- 输入气泡正常显示
+- 右键菜单正常显示
+- 用户输入处理正确
+- 位置同步正确
+
+#### 任务 2.5：实现截图系统
+**文件：** `src/frontend/core/managers/screenshot_system.py`
+
+**任务清单：**
+- [ ] 实现 `ScreenshotSystem` 类
+  - [ ] `__init__(parent, bubble_system)`
+  - [ ] `start_screenshot()` - 启动截图
+  - [ ] `handle_screenshot(pixmap)` - 处理截图结果
+  - [ ] `on_screenshot_captured(pixmap)` - 截图回调
+
+**迁移清单：**
+- [ ] 迁移 `start_screenshot` 逻辑
+- [ ] 迁移 `handle_screenshot` 逻辑
+- [ ] 迁移 `PetScreenshotSelector` 逻辑
+- [ ] 迁移窥屏逻辑
+
+**验收标准：**
+- 区域截图功能正常
+- 截图显示正常
+- 窥屏功能正常
+- 截图发送正常
+
+#### 任务 2.6：实现缩放管理器
+**文件：** `src/frontend/core/managers/scale_manager.py`
+
+**任务清单：**
+- [ ] 实现 `ScaleManager` 类
+  - [ ] `__init__(parent, render_manager)`
+  - [ ] `change_scale(new_scale)` - 改变缩放倍率
+  - [ ] `get_current_scale()` - 获取当前缩放
+  - [ ] `_update_config(new_scale)` - 更新配置文件
+
+**迁移清单：**
+- [ ] 迁移 `change_scale` 逻辑
+- [ ] 迁移配置文件更新逻辑
+
+**验收标准：**
+- 缩放功能正常
+- 配置文件更新正确
+- 缩放菜单显示正确
+
+#### 任务 2.7：编写管理器单元测试
+**文件：** `tests/test_managers.py`
+
+**任务清单：**
+- [ ] 测试 `StateManager` 功能
+- [ ] 测试 `EventManager` 功能
+- [ ] 测试 `TrayManager` 功能
+- [ ] 测试 `BubbleSystem` 功能
+- [ ] 测试 `ScreenshotSystem` 功能
+- [ ] 测试 `ScaleManager` 功能
+
+**验收标准：**
+- 测试覆盖率 > 80%
+- 所有测试通过
+
+---
+
+### 阶段 3：主窗口重构（预计 2-3 天）
+
+#### 任务 3.1：创建简化版主窗口
+**文件：** `src/frontend/presentation/refactored_pet.py`
+
+**任务清单：**
+- [ ] 实现 `DesktopPet` 类（重构版）
+  - [ ] `__init__()` - 初始化
+  - [ ] `init_window()` - 初始化窗口属性
+  - [ ] `init_managers()` - 初始化管理器
+  - [ ] `init_ui()` - 初始化 UI 布局
+  - [ ] `show()` - 显示窗口
+  - [ ] `hide()` - 隐藏窗口
+
+**事件委托：**
+- [ ] `mousePressEvent(event)` - 委托给 EventManager
+- [ ] `mouseReleaseEvent(event)` - 委托给 EventManager
+- [ ] `mouseMoveEvent(event)` - 委托给 EventManager
+- [ ] `mouseDoubleClickEvent(event)` - 委托给 EventManager
+- [ ] `contextMenuEvent(event)` - 委托给 EventManager
+
+**信号连接：**
+- [ ] 连接 `signals_bus.message_received` 到 `bubble_system.show_message`
+- [ ] 连接 `signals_bus.position_changed` 到 `_on_position_changed`
+- [ ] 连接快捷键到 `screenshot_system.start_screenshot`
+
+**验收标准：**
+- 主窗口正常显示
+- 所有事件正确委托
+- 所有信号正确连接
+
+#### 任务 3.2：更新主入口文件
+**文件：** `main.py`
+
+**任务清单：**
+- [ ] 更新导入路径
+  - [ ] 从 `src/frontend/pet.py` 改为 `src/frontend/presentation/refactored_pet.py`
+- [ ] 更新实例化代码
+- [ ] 添加配置验证
+
+**验收标准：**
+- 程序正常启动
+- 所有功能正常
+
+#### 任务 3.3：编写集成测试
+**文件：** `tests/test_integration.py`
+
+**任务清单：**
+- [ ] 测试主窗口初始化
+- [ ] 测试管理器集成
 - [ ] 测试事件流转
-- [ ] 测试状态同步
-- [ ] 测试资源管理
+- [ ] 测试信号连接
+- [ ] 测试完整功能流程
 
-#### 5.3 性能测试
-- [ ] 测试 CPU 占用率
-- [ ] 测试内存占用
-- [ ] 测试响应速度
-- [ ] 测试稳定性
-
-#### 5.4 修复问题
-- [ ] 修复发现的问题
-- [ ] 优化性能
-- [ ] 完善错误处理
-
-### 阶段 6：文档和清理（1 天）
-
-#### 6.1 更新文档
-- [ ] 更新 `docs/a1-LIVE2D_REFACTORING_PLAN.md`
-- [ ] 更新 `docs/t1-TODOLIST.md`
-- [ ] 更新 `README.md`
-- [ ] 编写架构说明文档
-- [ ] 编写使用指南
-
-#### 6.2 代码清理
-- [ ] 删除旧代码
-- [ ] 清理注释
-- [ ] 统一代码风格
-- [ ] 完善文档字符串
-
-#### 6.3 准备发布
-- [ ] 更新 CHANGELOG
-- [ ] 更新版本号
-- [ ] 创建 Git 标签
-- [ ] 发布新版本
+**验收标准：**
+- 所有集成测试通过
+- 功能回归测试通过
 
 ---
 
-## 四、文件映射关系
+### 阶段 4：清理和优化（预计 1-2 天）
 
-### 原始文件 → 新文件
+#### 任务 4.1：清理旧代码
+**任务清单：**
+- [ ] 移动 `pet.py` 到 `legacy/` 目录
+- [ ] 更新所有导入引用
+- [ ] 清理未使用的代码
+- [ ] 更新文档
 
-| 原始文件 | 新文件 | 说明 |
-|----------|--------|------|
-| `src/frontend/pet.py` | `src/frontend/presentation/refactored_pet.py` | 主窗口重构 |
-| `src/frontend/pet.py` (渲染部分) | `src/frontend/core/render/static_renderer.py` | 静态渲染器 |
-| `src/frontend/pet.py` (渲染部分) | `src/frontend/core/render/live2d_renderer.py` | Live2D 渲染器 |
-| `src/frontend/pet.py` (事件部分) | `src/frontend/core/managers/event_manager.py` | 事件管理器 |
-| `src/frontend/pet.py` (状态部分) | `src/frontend/core/managers/state_manager.py` | 状态管理器 |
-| `src/frontend/pet.py` (气泡部分) | `src/frontend/presentation/bubble_system.py` | 气泡系统 |
-| `src/frontend/pet.py` (截图部分) | `src/frontend/presentation/screenshot_manager.py` | 截图管理器 |
-| `src/frontend/pet.py` (托盘部分) | `src/frontend/presentation/tray_manager.py` | 托盘管理器 |
+#### 任务 4.2：性能优化
+**任务清单：**
+- [ ] 分析性能瓶颈
+- [ ] 优化渲染性能
+- [ ] 优化事件处理
+- [ ] 优化资源管理
+- [ ] 减少内存占用
 
-### 新增文件
+**验收标准：**
+- CPU 占用 < 15%
+- 内存占用 < 100MB
+- 帧率稳定在 60FPS
 
-| 文件路径 | 说明 |
-|----------|------|
-| `src/frontend/core/render/interfaces.py` | 渲染器接口 |
-| `src/frontend/core/managers/render_manager.py` | 渲染管理器 |
-| `src/frontend/core/managers/__init__.py` | 管理器模块初始化 |
-| `src/frontend/core/render/__init__.py` | 渲染器模块初始化 |
-| `src/frontend/presentation/__init__.py` | UI 层模块初始化 |
+#### 任务 4.3：完善文档
+**任务清单：**
+- [ ] 更新 `a1-LIVE2D_REFACTORING_PLAN.md`
+- [ ] 创建 `README_REFACTORING.md`
+- [ ] 更新代码注释
+- [ ] 创建架构图
+- [ ] 编写迁移指南
+
+#### 任务 4.4：全面测试
+**任务清单：**
+- [ ] 单元测试（覆盖率 > 90%）
+- [ ] 集成测试
+- [ ] 性能测试
+- [ ] 兼容性测试（Windows/macOS/Linux）
+- [ ] 用户体验测试
+
+**验收标准：**
+- 所有测试通过
+- 无已知 Bug
+- 用户体验良好
 
 ---
 
-## 五、风险评估
+### 阶段 5：发布准备（预计 1 天）
 
-### 高风险项
+#### 任务 5.1：准备发布
+**任务清单：**
+- [ ] 更新 `CHANGELOG.md`
+- [ ] 创建发布说明
+- [ ] 准备版本标签
+- [ ] 更新配置模板
+
+#### 任务 5.2：代码审查
+**任务清单：**
+- [ ] 自我代码审查
+- [ ] 团队代码审查（如果有）
+- [ ] 修复审查问题
+- [ ] 代码格式化
+
+#### 任务 5.3：发布
+**任务清单：**
+- [ ] 提交代码到 Git
+- [ ] 创建发布版本
+- [ ] 更新文档
+- [ ] 通知用户
+
+---
+
+## 四、风险管理
+
+### 4.1 高风险项
 
 | 风险项 | 影响 | 概率 | 应对措施 |
 |--------|------|------|----------|
-| 现有功能破坏 | 高 | 中 | 完善的单元测试，逐步迁移 |
-| 管理器之间通信问题 | 高 | 中 | 使用信号槽机制，定义清晰接口 |
-| 性能下降 | 高 | 低 | 提前进行性能测试，优化关键路径 |
+| 功能回归 | 高 | 中 | 完善的单元测试和集成测试 |
+| 性能下降 | 高 | 低 | 持续性能监控和优化 |
+| 兼容性问题 | 中 | 中 | 在多个平台测试 |
+| 开发周期延长 | 中 | 中 | 严格执行阶段计划 |
 
-### 中风险项
+### 4.2 回滚策略
 
-| 风险项 | 影响 | 概率 | 应对措施 |
-|--------|------|------|----------|
-| 兼容性问题 | 中 | 中 | 充分测试，保留回滚方案 |
-| 开发周期延长 | 中 | 中 | 严格执行阶段计划，及时调整 |
-| 测试覆盖不足 | 中 | 中 | 补充单元测试和集成测试 |
-
----
-
-## 六、回滚策略
-
-### 触发条件
-- 阶段 2-5 无法按时完成
+**触发条件：**
+- 阶段 3（主窗口重构）无法按时完成
 - 发现重大设计缺陷
-- 性能严重下降
-- 现有功能无法恢复
+- 功能回归无法修复
 
-### 回滚步骤
-1. 停止重构工作
-2. 恢复备份文件（`src/frontend/pet.py.backup`）
-3. 保留已创建的新文件作为参考
-4. 分析问题原因
-5. 修复问题后重新开始
+**回滚步骤：**
+1. 保留阶段 1 和阶段 2 的成果
+2. 回退到 `pet.py.backup`
+3. 修复因重构引入的问题
+4. 发布基于旧代码的版本
 
 ---
 
-## 七、预期收益
+## 五、验收标准
 
-### 可维护性
-- ✅ 代码职责清晰，易于理解
-- ✅ 修改功能不影响其他模块
-- ✅ 新功能易于扩展
+### 5.1 功能验收
 
-### 可测试性
-- ✅ 每个模块可独立测试
-- ✅ 单元测试覆盖率提高
-- ✅ 集成测试更容易
+- [ ] 所有现有功能正常工作
+- [ ] 无功能回归
+- [ ] 新增功能符合设计要求
 
-### 可扩展性
-- ✅ 易于添加新的渲染器
-- ✅ 易于添加新的管理器
-- ✅ 易于支持 Live2D
+### 5.2 性能验收
 
-### 性能
-- ✅ 资源管理更优化
-- ✅ 事件处理更高效
-- ✅ 内存占用更合理
+- [ ] CPU 占用 < 15%
+- [ ] 内存占用 < 100MB
+- [ ] 帧率稳定在 60FPS
+- [ ] 启动时间 < 3秒
 
----
+### 5.3 质量验收
 
-## 八、进度跟踪
+- [ ] 单元测试覆盖率 > 90%
+- [ ] 所有测试通过
+- [ ] 代码符合 PEP 8 规范
+- [ ] 文档完整
 
-### 已完成
-- [x] 阶段 1：基础架构准备（假设已完成）
-- [ ] 阶段 2：渲染系统实现
-- [ ] 阶段 3：管理器实现
-- [ ] 阶段 4：主窗口重构
-- [ ] 阶段 5：集成测试
-- [ ] 阶段 6：文档和清理
+### 5.4 可维护性验收
 
-### 当前状态
-- 📋 准备开始重构
-- ⏳ 等待用户确认方案
-
-### 预计完成时间
-- 阶段 2：2-3 天
-- 阶段 3：3-4 天
-- 阶段 4：2-3 天
-- 阶段 5：1-2 天
-- 阶段 6：1 天
-- **总计：9-13 天**
+- [ ] 代码结构清晰
+- [ ] 职责分离明确
+- [ ] 易于扩展新功能
+- [ ] 易于编写测试
 
 ---
 
-## 九、附录
+## 六、后续计划
 
-### A. 相关文档
-- [a1-LIVE2D_REFACTORING_PLAN.md](./a1-LIVE2D_REFACTORING_PLAN.md) - 重构规划文档
-- [t1-TODOLIST.md](./t1-TODOLIST.md) - 总体任务清单
-- [README.md](../README.md) - 项目说明
+### 6.1 短期计划（1-2 周）
 
-### B. 参考资源
+- [ ] 完成 Live2D 渲染器实现
+- [ ] 添加更多动画效果
+- [ ] 优化交互体验
+- [ ] 添加配置界面
+
+### 6.2 中期计划（1-2 月）
+
+- [ ] 多模型支持
+- [ ] 语音识别
+- [ ] 语音合成
+- [ ] AI 对话集成
+
+### 6.3 长期计划（3-6 月）
+
+- [ ] 插件系统
+- [ ] 社区模型库
+- [ ] 跨平台支持完善
+- [ ] 商业化功能
+
+---
+
+## 七、附录
+
+### A. 参考资料
+
+- [PEP 8 - Python 代码风格指南](https://pep.python.org/pep-0008/)
 - [PyQt5 官方文档](https://doc.qt.io/qt-5/)
 - [Python 架构模式](https://refactoring.guru/design-patterns/python)
-- [单一职责原则](https://en.wikipedia.org/wiki/Single-responsibility_principle)
+
+### B. 工具推荐
+
+- **代码分析：** pylint, black, isort
+- **测试框架：** pytest, pytest-cov, pytest-qt
+- **性能分析：** py-spy, memory_profiler
+- **文档工具：** Sphinx, MkDocs
+
+### C. 联系方式
+
+如有问题或建议，请联系：
+- 项目地址：https://github.com/MaiM-with-u/MaiM-desktop-pet
+- 问题反馈：https://github.com/MaiM-with-u/MaiM-desktop-pet/issues
 
 ---
 
