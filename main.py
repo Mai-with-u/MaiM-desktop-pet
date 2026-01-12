@@ -72,18 +72,9 @@ if __name__ == "__main__":
         api_thread = threading.Thread(target=run, daemon=True)
         api_thread.start()
         
-        # 配置：是否使用重构后的架构
-        USE_REFACTORED_ARCHITECTURE = True
-        
-        if USE_REFACTORED_ARCHITECTURE:
-            # 使用重构后的架构
-            from src.frontend.presentation.refactored_pet import refactored_pet
-            chat_pet = refactored_pet
-            print("✓ 使用重构后的架构")
-        else:
-            # 使用旧架构（向后兼容）
-            from src.frontend.pet import chat_pet
-            print("✓ 使用旧架构")
+        from src.frontend.presentation.pet import desktop_pet
+        chat_pet = desktop_pet
+        print("✓ 使用重构后的架构")
         
         chat_pet.show()
         sys.exit(app.exec_())

@@ -29,7 +29,7 @@ from typing import Literal
 app = QApplication(sys.argv)
 
 
-class RefactoredDesktopPet(QWidget):
+class DesktopPet(QWidget):
     """
     重构后的桌面宠物主窗口
     
@@ -385,4 +385,4 @@ class PetScreenshotSelector(ScreenshotSelector):
 
 
 # 创建实例
-refactored_pet = RefactoredDesktopPet()
+desktop_pet = DesktopPet()
