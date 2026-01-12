@@ -27,7 +27,15 @@ scale_factor = get_scale_factor(config)
 import sys
 from typing import Literal
 
-app = QApplication(sys.argv)
+# 从 main.py 导入 QApplication 实例（避免创建多个实例）
+# 注意：这个导入需要在模块级别，所以会导致循环依赖
+# 我们通过 sys.modules 来获取已创建的 app 实例
+def get_qapp():
+    """获取 QApplication 实例"""
+    from PyQt5.QtWidgets import QApplication
+    return QApplication.instance()
+
+app = get_qapp()
 
 # 全局桌面宠物实例引用
 _desktop_pet_instance = None
@@ -38,8 +46,10 @@ def safe_quit_global():
     logger.info("全局清理资源...")
     if _desktop_pet_instance:
         try:
-            # 直接复用 safe_quit 方法
-            _desktop_pet_instance.safe_quit()
+            # 不再调用 safe_quit（它会创建 event loop）
+            # 只执行必要的同步清理
+            # 协议管理器的清理已经在自己的线程中处理
+            logger.info("全局清理：守护线程将自动退出")
         except Exception as e:
             logger.error(f"全局清理时出错: {e}", exc_info=True)
 
@@ -47,7 +57,8 @@ def safe_quit_global():
 atexit.register(safe_quit_global)
 
 # 连接应用程序退出信号 - 处理 PyQt 应用的正常退出
-app.aboutToQuit.connect(safe_quit_global)
+# 注意：这可能在 atexit 之前触发，所以需要处理重复调用
+# app.aboutToQuit.connect(safe_quit_global)
 
 
 class DesktopPet(QWidget):
@@ -247,21 +258,61 @@ class DesktopPet(QWidget):
         """显示消息"""
         self.bubble_manager.show_message(text, msg_type, pixmap)
     
+    def safe_quit(self):
+        """安全退出 - 使用 Qt 的方式退出"""
+        
+        # 使用 QTimer.singleShot 延迟执行退出，确保在 Qt 事件循环中正确处理
+        # 这样可以避免在事件处理函数中直接调用 exit 导致的问题
+        QTimer.singleShot(100, self._do_safe_quit)
+    
+    def _do_safe_quit(self):
+        """实际执行退出的方法"""
+        # 先清理资源
+        try:
+            self.cleanup_resources()
+            logger.info("资源清理完成")
+        except Exception as e:
+            logger.error(f"清理资源时出错: {e}", exc_info=True)
+        
+        # 隐藏托盘图标
+        try:
+            if hasattr(self, 'tray_icon') and self.tray_icon:
+                self.tray_icon.hide()
+        except Exception as e:
+            logger.error(f"隐藏托盘图标时出错: {e}", exc_info=True)
+        
+        # 隐藏所有窗口
+        try:
+            self.hide()
+            if hasattr(self, 'chat_bubbles'):
+                for bubble in self.chat_bubbles._active_bubbles:
+                    bubble.hide()
+            if hasattr(self, 'bubble_input'):
+                self.bubble_input.hide()
+        except Exception as e:
+            logger.error(f"隐藏窗口时出错: {e}", exc_info=True)
+        
+        # 直接调用 os._exit(0) 强制终止进程
+        # 不依赖 QApplication.quit() 的返回值
+        import os
+        logger.info("调用 os._exit(0) 立即终止进程...")
+        os._exit(0)
+    
     def handle_user_input(self, text):
         """处理用户输入"""
         logger.info(f"收到用户输入: {text}")
         self.show_message(text=text, msg_type="sent")
         asyncio.run(chat_util.easy_to_send(str(text), "text"))
     
-    def safe_quit(self):
-        """安全退出"""
+    def cleanup_resources(self):
+        """清理所有资源（不包含退出逻辑）"""
         # 防止重复清理
         if hasattr(self, '_is_cleaning_up') and self._is_cleaning_up:
             logger.info("已经在清理中，跳过重复调用")
             return
         
         self._is_cleaning_up = True
-        logger.info("开始安全退出流程...")
+        logger.info("开始清理资源...")
         
         try:
             # 恢复终端显示
@@ -269,7 +320,6 @@ class DesktopPet(QWidget):
                 self.state_manager.show_console()
             
             # 隐藏托盘图标
-            logger.info("清理托盘图标...")
             if hasattr(self, 'tray_icon') and self.tray_icon:
                 self.tray_icon.hide()
                 self.tray_icon = None
@@ -294,35 +344,33 @@ class DesktopPet(QWidget):
             except Exception as e:
                 logger.error(f"清理状态管理器时出错: {e}", exc_info=True)
             
-            # 清理所有线程和资源
-            logger.info("清理线程管理器...")
             try:
-                import asyncio
-                # 尝试获取现有的事件循环，如果没有则创建新的
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_closed():
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                
-                # 清理线程管理器（包括数据库、router 等）
                 from src.core.thread_manager import thread_manager
-                loop.run_until_complete(thread_manager.cleanup_all())
-                logger.info("线程管理器清理完成")
+                
+                # 不等待清理完成，直接让守护线程自然退出
+                # ProtocolManager 是守护线程，会在主进程退出时自动清理
+                # 只需要执行清理函数，不需要等待异步任务完成
+                logger.info(f"共有 {len(thread_manager._cleanup_functions)} 个清理函数")
+                for i, cleanup_func in enumerate(thread_manager._cleanup_functions):
+                    try:
+                        logger.info(f"[{i+1}/{len(thread_manager._cleanup_functions)}] 执行清理函数: {cleanup_func.__name__}")
+                        if not asyncio.iscoroutinefunction(cleanup_func):
+                            logger.info(f"  -> {cleanup_func.__name__} 是同步函数，开始执行...")
+                            cleanup_func()
+                            logger.info(f"  -> {cleanup_func.__name__} 执行完成")
+                        else:
+                            logger.info(f"  -> {cleanup_func.__name__} 是异步函数，跳过（让守护线程自动清理）")
+                    except Exception as e:
+                        logger.error(f"执行清理函数时出错: {cleanup_func.__name__}, 错误: {e}", exc_info=True)
+                
+                logger.info("线程管理器清理完成（守护线程将自动退出）")
             except Exception as e:
                 logger.error(f"清理线程管理器时出错: {e}", exc_info=True)
             
-            # 退出应用
-            logger.info("应用程序退出")
-            QApplication.quit()
+            logger.info("cleanup_resources() 完成")
             
         except Exception as e:
-            logger.error(f"安全退出过程中出错: {e}", exc_info=True)
-            # 确保无论如何都退出应用
-            QApplication.quit()
+            logger.error(f"清理资源过程中出错: {e}", exc_info=True)
     
     # 窥屏功能
     def start_peeking(self):

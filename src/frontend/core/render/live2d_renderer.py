@@ -730,6 +730,13 @@ class Live2DWidget(QOpenGLWidget):
     
     def cleanup(self):
         """清理资源"""
+        logger.info("Live2DWidget 清理资源开始...")
+        # 停止鼠标跟踪定时器
+        if hasattr(self, 'mouse_tracking_timer') and self.mouse_tracking_timer:
+            self.mouse_tracking_timer.stop()
+            self.mouse_tracking_timer.deleteLater()
+            self.mouse_tracking_timer = None
+        
         if self.model:
             try:
                 from live2d.v3 import glRelease
@@ -737,4 +744,6 @@ class Live2DWidget(QOpenGLWidget):
             except:
                 pass
             self.model = None
+        
         self.initialized = False
+        logger.info("Live2DWidget 清理资源完成")

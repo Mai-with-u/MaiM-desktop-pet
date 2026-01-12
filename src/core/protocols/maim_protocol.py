@@ -102,19 +102,36 @@ class MaimProtocol(IProtocol):
     async def disconnect(self):
         """断开连接"""
         try:
-            if self._router:
-                await self._router.stop()
-            
-            self._is_running = False
-            self._is_connected = False
-            
-            # 取消运行任务
+            # 先取消运行任务，避免 event loop 冲突
             if self._run_task and not self._run_task.done():
                 self._run_task.cancel()
                 try:
                     await self._run_task
                 except asyncio.CancelledError:
-                    pass
+                    logger.info("路由器运行任务已取消")
+                except RuntimeError as e:
+                    # 如果任务属于另一个 event loop，忽略错误
+                    if "attached to a different loop" in str(e):
+                        logger.info("路由器任务属于另一个事件循环，跳过等待")
+                    else:
+                        raise
+            
+            # 停止路由器（不等待，因为可能属于另一个 event loop）
+            if self._router:
+                try:
+                    # 尝试停止路由器，但不等待完成
+                    # 因为 router.stop() 内部可能包含对 _monitor_task 的 await
+                    # 而那个任务可能属于另一个事件循环
+                    stop_task = asyncio.create_task(self._router.stop())
+                    # 不等待 stop_task 完成，让它在后台清理
+                except RuntimeError as e:
+                    if "attached to a different loop" in str(e):
+                        logger.info("路由器停止失败：事件循环不匹配，跳过")
+                    else:
+                        raise
+            
+            self._is_running = False
+            self._is_connected = False
             
             logger.info("Maim 协议已断开连接")
             
@@ -237,6 +254,13 @@ class MaimProtocol(IProtocol):
         except asyncio.CancelledError:
             logger.info("路由器运行已取消")
             raise
+        except RuntimeError as e:
+            # 忽略 maim_message 库在取消时产生的特定错误
+            if "await wasn't used with future" in str(e):
+                logger.debug("路由器停止时的预期错误（任务已取消）")
+            else:
+                logger.error(f"路由器运行出错: {e}", exc_info=True)
+            self._is_connected = False
         except Exception as e:
             logger.error(f"路由器运行出错: {e}", exc_info=True)
             self._is_connected = False
