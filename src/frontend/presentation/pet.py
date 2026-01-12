@@ -4,6 +4,7 @@
 """
 
 import asyncio
+import atexit
 import random
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QShortcut
 from PyQt5.QtCore import Qt, QTimer, QPoint
@@ -27,6 +28,26 @@ import sys
 from typing import Literal
 
 app = QApplication(sys.argv)
+
+# 全局桌面宠物实例引用
+_desktop_pet_instance = None
+
+def safe_quit_global():
+    """全局安全退出函数 - 确保无论如何退出都能清理所有资源"""
+    global _desktop_pet_instance
+    logger.info("全局清理资源...")
+    if _desktop_pet_instance:
+        try:
+            # 直接复用 safe_quit 方法
+            _desktop_pet_instance.safe_quit()
+        except Exception as e:
+            logger.error(f"全局清理时出错: {e}", exc_info=True)
+
+
+atexit.register(safe_quit_global)
+
+# 连接应用程序退出信号 - 处理 PyQt 应用的正常退出
+app.aboutToQuit.connect(safe_quit_global)
 
 
 class DesktopPet(QWidget):
@@ -68,6 +89,10 @@ class DesktopPet(QWidget):
         self.is_peeking = False
         self.peek_timer = QTimer(self)
         self.peek_timer.timeout.connect(self._on_peek_timer)
+        
+        # 保存全局引用以便在强制退出时也能清理
+        global _desktop_pet_instance
+        _desktop_pet_instance = self
         
         logger.info("重构后的桌面宠物初始化完成")
     
@@ -230,47 +255,75 @@ class DesktopPet(QWidget):
     
     def safe_quit(self):
         """安全退出"""
-        import asyncio
+        # 防止重复清理
+        if hasattr(self, '_is_cleaning_up') and self._is_cleaning_up:
+            logger.info("已经在清理中，跳过重复调用")
+            return
         
-        # 恢复终端显示
-        if not self.state_manager.is_console_visible():
-            self.state_manager.show_console()
+        self._is_cleaning_up = True
+        logger.info("开始安全退出流程...")
         
-        # 清理前端资源
-        logger.info("清理前端资源...")
-        self.event_manager.cleanup()
-        self.render_manager.cleanup()
-        self.state_manager.cleanup()
-        
-        # 清理所有资源（包括 router、数据库等）
         try:
-            # 在新的事件循环中执行异步清理
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self._cleanup_all_resources())
-            loop.close()
-        except Exception as e:
-            logger.error(f"清理资源时出错: {e}", exc_info=True)
-        
-        # 退出应用
-        logger.info("应用程序退出")
-        QApplication.quit()
-    
-    async def _cleanup_all_resources(self):
-        """清理所有异步资源"""
-        try:
-            # 导入并执行清理函数
-            from main import cleanup_all
-            await cleanup_all()
+            # 恢复终端显示
+            if not self.state_manager.is_console_visible():
+                self.state_manager.show_console()
+            
+            # 隐藏托盘图标
+            logger.info("清理托盘图标...")
+            if hasattr(self, 'tray_icon') and self.tray_icon:
+                self.tray_icon.hide()
+                self.tray_icon = None
+            
+            # 清理前端资源
+            logger.info("清理前端资源...")
+            try:
+                if hasattr(self, 'event_manager') and self.event_manager:
+                    self.event_manager.cleanup()
+            except Exception as e:
+                logger.error(f"清理事件管理器时出错: {e}", exc_info=True)
+            
+            try:
+                if hasattr(self, 'render_manager') and self.render_manager:
+                    self.render_manager.cleanup()
+            except Exception as e:
+                logger.error(f"清理渲染管理器时出错: {e}", exc_info=True)
+            
+            try:
+                if hasattr(self, 'state_manager') and self.state_manager:
+                    self.state_manager.cleanup()
+            except Exception as e:
+                logger.error(f"清理状态管理器时出错: {e}", exc_info=True)
             
             # 清理数据库
-            from src.database import db_manager
-            if db_manager.is_initialized():
-                await db_manager.close()
-                logger.info("数据库连接已关闭")
+            logger.info("清理数据库...")
+            try:
+                import asyncio
+                # 尝试获取现有的事件循环，如果没有则创建新的
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_closed():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
                 
+                # 同步关闭数据库
+                from src.database import db_manager
+                if db_manager.is_initialized():
+                    loop.run_until_complete(db_manager.close())
+                    logger.info("数据库连接已关闭")
+            except Exception as e:
+                logger.error(f"清理数据库时出错: {e}", exc_info=True)
+            
+            # 退出应用
+            logger.info("应用程序退出")
+            QApplication.quit()
+            
         except Exception as e:
-            logger.error(f"清理异步资源失败: {e}", exc_info=True)
+            logger.error(f"安全退出过程中出错: {e}", exc_info=True)
+            # 确保无论如何都退出应用
+            QApplication.quit()
     
     # 窥屏功能
     def start_peeking(self):
