@@ -39,6 +39,17 @@ class AnimationConfig(BaseModel):
     breathing_enabled: Optional[bool] = True
 
 
+class AnimationSchedulerConfig(BaseModel):
+    """动画调度器配置模型"""
+    enabled: Optional[bool] = True
+    idle_interval_min: Optional[float] = 30.0
+    idle_interval_max: Optional[float] = 90.0
+    random_motion_duration: Optional[float] = 5.0
+    group_weights: Optional[dict] = None
+    whitelist: Optional[list] = None
+    blacklist: Optional[list] = None
+
+
 class PerformanceConfig(BaseModel):
     """性能配置模型"""
     max_fps: Optional[int] = 60
@@ -90,6 +101,7 @@ class Config(BaseModel):
     render: Optional[RenderConfig] = None
     live2d: Optional[Live2DConfig] = None
     animation: Optional[AnimationConfig] = None
+    animation_scheduler: Optional[AnimationSchedulerConfig] = None
     performance: Optional[PerformanceConfig] = None
     database: Optional[DatabaseConfig] = None
     state: Optional[StateConfig] = None

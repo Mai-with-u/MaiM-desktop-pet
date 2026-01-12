@@ -10,6 +10,7 @@ import logging
 import os
 
 from .interfaces import IRenderer
+from ..managers.animation_scheduler import AnimationScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,14 @@ class Live2DRenderer(IRenderer):
     _live2d_initialized = False
     
     def __init__(self, model_path: str, custom_scale: float = 0.0, 
-                 custom_offset_x: float = 0.0, custom_offset_y: float = 0.0):
+                 custom_offset_x: float = 0.0, custom_offset_y: float = 0.0,
+                 enable_animation_scheduler: bool = True,
+                 scheduler_idle_interval_min: float = 30.0,
+                 scheduler_idle_interval_max: float = 90.0,
+                 scheduler_random_motion_duration: float = 5.0,
+                 scheduler_group_weights: dict = None,
+                 scheduler_whitelist: list = None,
+                 scheduler_blacklist: list = None):
         """
         初始化 Live2D 渲染器
         
@@ -35,15 +43,32 @@ class Live2DRenderer(IRenderer):
             custom_scale: 自定义缩放比例（0 表示自动计算）
             custom_offset_x: 自定义水平偏移
             custom_offset_y: 自定义垂直偏移
+            enable_animation_scheduler: 是否启用动画调度器（默认启用）
+            scheduler_idle_interval_min: 调度器待机动作最小间隔（秒）
+            scheduler_idle_interval_max: 调度器待机动作最大间隔（秒）
+            scheduler_random_motion_duration: 调度器随机动作持续时间（秒）
+            scheduler_group_weights: 调度器动作组权重
+            scheduler_whitelist: 调度器动作组白名单
+            scheduler_blacklist: 调度器动作组黑名单
         """
         self.model_path = model_path
         self.widget: Live2DWidget = None
         self.timer: QTimer = None
+        self.animation_scheduler: AnimationScheduler = None
         
         # 自定义缩放和偏移参数
         self.custom_scale = custom_scale
         self.custom_offset_x = custom_offset_x
         self.custom_offset_y = custom_offset_y
+        
+        # 动画调度器配置参数
+        self._enable_animation_scheduler = enable_animation_scheduler
+        self._scheduler_idle_interval_min = scheduler_idle_interval_min
+        self._scheduler_idle_interval_max = scheduler_idle_interval_max
+        self._scheduler_random_motion_duration = scheduler_random_motion_duration
+        self._scheduler_group_weights = scheduler_group_weights or {}
+        self._scheduler_whitelist = scheduler_whitelist or []
+        self._scheduler_blacklist = scheduler_blacklist or []
         
         # 检查 Live2D 库是否可用
         if Live2DRenderer._live2d_available is None:
@@ -93,6 +118,24 @@ class Live2DRenderer(IRenderer):
         fmt = QSurfaceFormat()
         fmt.setSamples(4)
         QSurfaceFormat.setDefaultFormat(fmt)
+        
+        # 初始化动画调度器
+        if self._enable_animation_scheduler:
+            try:
+                self.animation_scheduler = AnimationScheduler(
+                    self.model_path,
+                    idle_interval_min=self._scheduler_idle_interval_min,
+                    idle_interval_max=self._scheduler_idle_interval_max,
+                    random_motion_duration=self._scheduler_random_motion_duration,
+                    group_weights=self._scheduler_group_weights,
+                    whitelist=self._scheduler_whitelist,
+                    blacklist=self._scheduler_blacklist,
+                    enabled=True
+                )
+                logger.info("动画调度器初始化成功")
+            except Exception as e:
+                logger.warning(f"动画调度器初始化失败: {e}")
+                self.animation_scheduler = None
     
     def attach(self, parent):
         """
@@ -126,6 +169,15 @@ class Live2DRenderer(IRenderer):
         self.timer = QTimer()
         self.timer.timeout.connect(self.widget.update_model)
         self.timer.start(16)
+        
+        # 启动动画调度器
+        if self.animation_scheduler:
+            # 连接调度器信号
+            self.animation_scheduler.motion_changed.connect(self._on_scheduler_motion_changed)
+            
+            # 启动调度器
+            self.animation_scheduler.start()
+            logger.info("动画调度器已启动")
         
         logger.info("Live2D 渲染器已附加并启动更新循环")
     
@@ -245,9 +297,41 @@ class Live2DRenderer(IRenderer):
         
         return offset_y
     
+    def _on_scheduler_motion_changed(self, group_name: str, motion_file: str):
+        """
+        动画调度器动作改变回调
+        
+        Args:
+            group_name: 动作组名称
+            motion_file: 动作文件路径
+        """
+        if not self.widget or not self.widget.model:
+            logger.warning(f"Live2D 模型未加载，无法播放动作: {motion_file}")
+            return
+        
+        try:
+            self.widget.model.StartMotion(group_name, 0)
+            logger.debug(f"调度器播放动作: {group_name} -> {motion_file}")
+        except Exception as e:
+            logger.warning(f"播放动作失败 {group_name}: {e}")
+    
+    def get_animation_scheduler(self) -> AnimationScheduler:
+        """
+        获取动画调度器实例
+        
+        Returns:
+            AnimationScheduler: 动画调度器实例，如果未初始化则返回 None
+        """
+        return self.animation_scheduler
+    
     def cleanup(self):
         """清理资源"""
         logger.info("清理 Live2D 渲染器资源")
+        
+        # 清理动画调度器
+        if self.animation_scheduler:
+            self.animation_scheduler.cleanup()
+            self.animation_scheduler = None
         
         if self.timer:
             self.timer.stop()

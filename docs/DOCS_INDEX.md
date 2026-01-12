@@ -21,6 +21,14 @@
 
 ---
 
+## 文档说明
+
+| 文件名 | 标题 | 描述 | 创建日期 |
+|--------|------|------|----------|
+| `README.md` | 文档目录说明 | 文档命名规范、组织结构和维护规范 | 2026-01-08 |
+
+---
+
 ## 文档列表
 
 ### 总体架构（a-）
@@ -59,12 +67,16 @@
 | `g2-LIVE2D_TRACKING_FEATURE.md` | Live2D 跟踪功能 | 鼠标追踪和交互功能说明 | 2026-01-09 |
 | `g3-PROTOCOL_LAYER_SUMMARY.md` | 通信协议层总结 | 协议层架构、设计原则、实现总结 | 2026-01-13 |
 | `g4-MESSAGE_UTIL_SUMMARY.md` | 消息格式转换工具总结 | 消息格式转换工具的实现和使用 | 2026-01-13 |
+| `g5-LIVE2D_MODEL_INFO_TOOL.md` | Live2D 模型信息工具 | 查看 Live2D 模型动作和表情的工具 | 2026-01-13 |
+| `g6-ANIMATION_SCHEDULER.md` | Live2D 动画调度器使用指南 | 自动随机动画切换系统 | 2026-01-13 |
 
 **阅读顺序：**
 1. `g1-MIGRATION_GUIDE.md` - 版本迁移
 2. `g2-LIVE2D_TRACKING_FEATURE.md` - 跟踪功能使用
-3. `g3-PROTOCOL_LAYER_SUMMARY.md` - 协议层理解
-4. `g4-MESSAGE_UTIL_SUMMARY.md` - 消息转换工具
+3. `g5-LIVE2D_MODEL_INFO_TOOL.md` - 模型信息查看
+4. `g6-ANIMATION_SCHEDULER.md` - 动画调度器使用
+5. `g3-PROTOCOL_LAYER_SUMMARY.md` - 协议层理解
+6. `g4-MESSAGE_UTIL_SUMMARY.md` - 消息转换工具
 
 ---
 
@@ -119,13 +131,14 @@
 
 | 分类 | 数量 |
 |------|------|
+| 文档说明 | 1 |
 | 总体架构（a-） | 2 |
 | 功能特性（f-） | 3 |
-| 指南文档（g-） | 4 |
+| 指南文档（g-） | 6 |
 | 日志/变更（l-） | 3 |
 | 阶段报告（p-） | 5 |
 | 任务清单（t-） | 2 |
-| **总计** | **19** |
+| **总计** | **22** |
 
 ---
 
@@ -157,6 +170,8 @@
 3. `f2-DYNAMIC_SIZE_RENDERING.md` - 动态大小
 4. `f3-LIVE2D_CUSTOM_SCALE_OFFSET.md` - 自定义参数
 5. `g2-LIVE2D_TRACKING_FEATURE.md` - 跟踪功能
+6. `g5-LIVE2D_MODEL_INFO_TOOL.md` - 查看模型信息
+7. `g6-ANIMATION_SCHEDULER.md` - 动画调度器
 
 ---
 

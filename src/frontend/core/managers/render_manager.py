@@ -46,6 +46,9 @@ class RenderManager:
         self.custom_offset_x: float = 0.0
         self.custom_offset_y: float = 0.0
         
+        # 动画调度器配置
+        self.enable_animation_scheduler: bool = True
+        
         # 加载配置
         self.load_config()
         
@@ -88,11 +91,34 @@ class RenderManager:
                 self.custom_offset_x = 0.0
                 self.custom_offset_y = 0.0
             
+            # 获取动画调度器配置
+            animation_scheduler_config = getattr(config, 'animation_scheduler', None)
+            if animation_scheduler_config:
+                self.enable_animation_scheduler = getattr(animation_scheduler_config, 'enabled', True)
+                # 读取调度器详细配置
+                self.scheduler_idle_interval_min = getattr(animation_scheduler_config, 'idle_interval_min', 30.0)
+                self.scheduler_idle_interval_max = getattr(animation_scheduler_config, 'idle_interval_max', 90.0)
+                self.scheduler_random_motion_duration = getattr(animation_scheduler_config, 'random_motion_duration', 5.0)
+                self.scheduler_group_weights = getattr(animation_scheduler_config, 'group_weights', None) or {}
+                self.scheduler_whitelist = getattr(animation_scheduler_config, 'whitelist', None) or []
+                self.scheduler_blacklist = getattr(animation_scheduler_config, 'blacklist', None) or []
+            else:
+                self.enable_animation_scheduler = True
+                self.scheduler_idle_interval_min = 30.0
+                self.scheduler_idle_interval_max = 90.0
+                self.scheduler_random_motion_duration = 5.0
+                self.scheduler_group_weights = {}
+                self.scheduler_whitelist = []
+                self.scheduler_blacklist = []
+            
             logger.info(f"加载渲染配置: use_live2d={self.use_live2d}, "
                        f"model_path={self.live2d_model_path}, "
                        f"allow_switch={self.allow_switch}, "
                        f"custom_scale={self.custom_scale}, "
-                       f"custom_offset=({self.custom_offset_x}, {self.custom_offset_y})")
+                       f"custom_offset=({self.custom_offset_x}, {self.custom_offset_y}), "
+                       f"enable_animation_scheduler={self.enable_animation_scheduler}, "
+                       f"scheduler_config=({self.scheduler_idle_interval_min}-{self.scheduler_idle_interval_max}s, "
+                       f"{self.scheduler_random_motion_duration}s duration)")
         except Exception as e:
             logger.error(f"加载渲染配置失败: {e}")
             # 使用默认配置
@@ -113,8 +139,17 @@ class RenderManager:
                             self.live2d_model_path,
                             custom_scale=self.custom_scale,
                             custom_offset_x=self.custom_offset_x,
-                            custom_offset_y=self.custom_offset_y
+                            custom_offset_y=self.custom_offset_y,
+                            enable_animation_scheduler=self.enable_animation_scheduler,
+                            scheduler_idle_interval_min=self.scheduler_idle_interval_min,
+                            scheduler_idle_interval_max=self.scheduler_idle_interval_max,
+                            scheduler_random_motion_duration=self.scheduler_random_motion_duration,
+                            scheduler_group_weights=self.scheduler_group_weights,
+                            scheduler_whitelist=self.scheduler_whitelist,
+                            scheduler_blacklist=self.scheduler_blacklist
                         )
+                        # 初始化渲染器
+                        self.renderer.initialize()
                         self.current_mode = "live2d"
                         logger.info("使用 Live2D 渲染器")
                         return
@@ -187,7 +222,14 @@ class RenderManager:
                     self.live2d_model_path,
                     custom_scale=self.custom_scale,
                     custom_offset_x=self.custom_offset_x,
-                    custom_offset_y=self.custom_offset_y
+                    custom_offset_y=self.custom_offset_y,
+                    enable_animation_scheduler=self.enable_animation_scheduler,
+                    scheduler_idle_interval_min=self.scheduler_idle_interval_min,
+                    scheduler_idle_interval_max=self.scheduler_idle_interval_max,
+                    scheduler_random_motion_duration=self.scheduler_random_motion_duration,
+                    scheduler_group_weights=self.scheduler_group_weights,
+                    scheduler_whitelist=self.scheduler_whitelist,
+                    scheduler_blacklist=self.scheduler_blacklist
                 )
             elif mode == "static":
                 self.renderer = StaticRenderer()
