@@ -2,7 +2,7 @@
 
 本文档列出了 `docs/` 目录下的所有文档及其分类。
 
-**最后更新：** 2026-01-10
+**最后更新：** 2026-01-13
 
 ---
 
@@ -57,10 +57,14 @@
 |--------|------|------|----------|
 | `g1-MIGRATION_GUIDE.md` | 迁移指南 | 从旧版本升级到新版本 | 2026-01-08 |
 | `g2-LIVE2D_TRACKING_FEATURE.md` | Live2D 跟踪功能 | 鼠标追踪和交互功能说明 | 2026-01-09 |
+| `g3-PROTOCOL_LAYER_SUMMARY.md` | 通信协议层总结 | 协议层架构、设计原则、实现总结 | 2026-01-13 |
+| `g4-MESSAGE_UTIL_SUMMARY.md` | 消息格式转换工具总结 | 消息格式转换工具的实现和使用 | 2026-01-13 |
 
 **阅读顺序：**
 1. `g1-MIGRATION_GUIDE.md` - 版本迁移
 2. `g2-LIVE2D_TRACKING_FEATURE.md` - 跟踪功能使用
+3. `g3-PROTOCOL_LAYER_SUMMARY.md` - 协议层理解
+4. `g4-MESSAGE_UTIL_SUMMARY.md` - 消息转换工具
 
 ---
 
@@ -86,13 +90,15 @@
 | `p1-REFACTORING_COMPLETION_REPORT.md` | 重构完成报告 | 完成的工作、架构改进、后续计划 | 2026-01-08 |
 | `p2-REFACTORING_SUMMARY.md` | 重构摘要 | 重构概览和主要变更 | 2026-01-08 |
 | `p3-PET_REFACTORING_STAGE2_COMPLETION.md` | 阶段 2 完成报告 | 核心架构搭建完成 | 2026-01-09 |
+| `p4-COMMUNICATION_LAYER_REFACTORING.md` | 通信层架构重构完成报告 | 协议层架构重构的完整过程、设计方案和实施结果 | 2026-01-13 |
 | `p5-REFACTORING_TODOLIST.md` | 重构任务清单 | 详细的重构实施计划 | 2026-01-09 |
 
 **阅读顺序：**
 1. `p5-REFACTORING_TODOLIST.md` - 了解重构计划
 2. `p3-PET_REFACTORING_STAGE2_COMPLETION.md` - 阶段 2 成果
-3. `p1-REFACTORING_COMPLETION_REPORT.md` - 总体完成情况
-4. `p2-REFACTORING_SUMMARY.md` - 快速摘要
+3. `p4-COMMUNICATION_LAYER_REFACTORING.md` - 通信层重构成果
+4. `p1-REFACTORING_COMPLETION_REPORT.md` - 总体完成情况
+5. `p2-REFACTORING_SUMMARY.md` - 快速摘要
 
 ---
 
@@ -115,11 +121,11 @@
 |------|------|
 | 总体架构（a-） | 2 |
 | 功能特性（f-） | 3 |
-| 指南文档（g-） | 2 |
+| 指南文档（g-） | 4 |
 | 日志/变更（l-） | 3 |
-| 阶段报告（p-） | 4 |
+| 阶段报告（p-） | 5 |
 | 任务清单（t-） | 2 |
-| **总计** | **16** |
+| **总计** | **19** |
 
 ---
 
@@ -133,9 +139,11 @@
 
 ### 开发者
 1. `a1-LIVE2D_REFACTORING_PLAN.md` - 理解架构设计
-2. `p5-REFACTORING_TODOLIST.md` - 查看重构计划
-3. `t2-PET_REFACTORING_TODOLIST.md` - 跟踪开发进度
-4. `a2-project_structure.md` - 查看代码结构
+2. `g3-PROTOCOL_LAYER_SUMMARY.md` - 理解协议层
+3. `g4-MESSAGE_UTIL_SUMMARY.md` - 学习消息转换
+4. `p5-REFACTORING_TODOLIST.md` - 查看重构计划
+5. `t2-PET_REFACTORING_TODOLIST.md` - 跟踪开发进度
+6. `a2-project_structure.md` - 查看代码结构
 
 ### 维护者
 1. `p3-PET_REFACTORING_STAGE2_COMPLETION.md` - 了解最新进展
@@ -201,4 +209,3 @@
 ---
 
 **文档结束**
-

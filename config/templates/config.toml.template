@@ -160,6 +160,55 @@ texture_cache_size = 256
 
 
 # ----------------------------------------------------------------------
+# 通信协议配置
+# ----------------------------------------------------------------------
+
+# 支持多个协议同时配置，程序启动时会自动选择第一个协议作为默认协议
+# 可以在运行时切换不同的协议
+
+[[protocols]]
+# 协议类型：maim 或 openai
+type = "maim"
+
+# Maim 协议配置（WebSocket 连接）
+# WebSocket 服务器地址
+url = "ws://127.0.0.1:8000/ws"
+
+# 平台标识
+platform = "desktop-pet"
+
+# 认证令牌（可选）
+# token = "your_token_here"
+
+# --------------------------------------------------
+# OpenAI 协议配置示例
+# --------------------------------------------------
+# 如果需要使用 OpenAI 协议，取消下面的注释并配置
+#
+# [[protocols]]
+# type = "openai"
+#
+# # API 密钥（必填）
+# api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+#
+# # API 基础地址（可选，默认官方地址）
+# base_url = "https://api.openai.com/v1"
+#
+# # 模型名称（可选，默认 gpt-3.5-turbo）
+# model = "gpt-3.5-turbo"
+#
+# # 系统提示词（可选）
+# system_prompt = "你是一个友好的桌面宠物助手，名字叫 MaMai。请用活泼、可爱的语气回复。"
+# --------------------------------------------------
+
+# --------------------------------------------------
+# 自定义协议
+# --------------------------------------------------
+# 你可以通过代码注册自定义协议，然后在此配置
+# 参考文档：src/core/protocols/README.md
+# --------------------------------------------------
+
+# ----------------------------------------------------------------------
 # 数据库配置
 # ----------------------------------------------------------------------
 
@@ -193,25 +242,32 @@ console_visible = true
 # ----------------------------------------------------------------------
 # 
 # 1. Live2D 模型文件要求：
-#    - 必须包含 .model3.json 文件
-#    - 相关的 .moc3、纹理、动作文件必须在同一目录下
-#    - 推荐使用 Cubism Editor 4.0 或更高版本导出的模型
+#     - 必须包含 .model3.json 文件
+#     - 相关的 .moc3、纹理、动作文件必须在同一目录下
+#     - 推荐使用 Cubism Editor 4.0 或更高版本导出的模型
 #
 # 2. 性能优化建议：
-#    - 低性能设备：render_quality = "low", physics_enabled = false, max_fps = 30
-#    - 中等性能设备：render_quality = "medium", physics_enabled = true, max_fps = 60
-#    - 高性能设备：render_quality = "high", physics_enabled = true, max_fps = 60
+#     - 低性能设备：render_quality = "low", physics_enabled = false, max_fps = 30
+#     - 中等性能设备：render_quality = "medium", physics_enabled = true, max_fps = 60
+#     - 高性能设备：render_quality = "high", physics_enabled = true, max_fps = 60
 #
 # 3. 多实例模式：
-#    - 启用 allow_multiple_source_conversion 后，会自动为每个实例生成唯一的 platform ID
-#    - 适用于需要同时运行多个桌宠的场景
+#     - 启用 allow_multiple_source_conversion 后，会自动为每个实例生成唯一的 platform ID
+#     - 适用于需要同时运行多个桌宠的场景
 #
 # 4. 截图快捷键：
-#    - 快捷键格式必须符合 Qt QKeySequence 规范
-#    - 常用示例：Ctrl+Shift+A, Alt+F4, F5, Ctrl+S
+#     - 快捷键格式必须符合 Qt QKeySequence 规范
+#     - 常用示例：Ctrl+Shift+A, Alt+F4, F5, Ctrl+S
 #
 # 5. 调试：
-#    - 设置 hide_console = false 可以查看程序运行日志
-#    - 日志文件保存在 logs/pet.log
+#     - 设置 hide_console = false 可以查看程序运行日志
+#     - 日志文件保存在 logs/pet.log
+#
+# 6. 通信协议配置：
+#     - Maim 协议：适用于连接本地或远程的 Maim 后端服务
+#     - OpenAI 协议：适用于直接使用 OpenAI API 进行对话
+#     - 可以同时配置多个协议，启动时自动使用第一个
+#     - 可以在运行时动态切换协议
+#     - 支持自定义协议扩展
 #
 # ----------------------------------------------------------------------

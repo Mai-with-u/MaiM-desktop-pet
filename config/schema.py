@@ -52,6 +52,20 @@ class DatabaseConfig(BaseModel):
     path: Optional[str] = "data/chat.db"
 
 
+class ProtocolConfig(BaseModel):
+    """单个协议配置模型"""
+    type: str  # 协议类型: maim, openai
+    # Maim 协议配置
+    url: Optional[str] = None
+    platform: Optional[str] = "default"
+    token: Optional[str] = None
+    # OpenAI 协议配置
+    api_key: Optional[str] = None
+    base_url: Optional[str] = "https://api.openai.com/v1"
+    model: Optional[str] = "gpt-3.5-turbo"
+    system_prompt: Optional[str] = None
+
+
 class StateConfig(BaseModel):
     """状态配置模型"""
     locked: Optional[bool] = False
@@ -79,6 +93,7 @@ class Config(BaseModel):
     performance: Optional[PerformanceConfig] = None
     database: Optional[DatabaseConfig] = None
     state: Optional[StateConfig] = None
+    protocols: Optional[list[ProtocolConfig]] = None  # 协议配置列表
     
     class Config:
         """Pydantic 配置"""

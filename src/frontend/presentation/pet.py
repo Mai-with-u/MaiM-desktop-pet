@@ -294,8 +294,8 @@ class DesktopPet(QWidget):
             except Exception as e:
                 logger.error(f"清理状态管理器时出错: {e}", exc_info=True)
             
-            # 清理数据库
-            logger.info("清理数据库...")
+            # 清理所有线程和资源
+            logger.info("清理线程管理器...")
             try:
                 import asyncio
                 # 尝试获取现有的事件循环，如果没有则创建新的
@@ -308,13 +308,12 @@ class DesktopPet(QWidget):
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                 
-                # 同步关闭数据库
-                from src.database import db_manager
-                if db_manager.is_initialized():
-                    loop.run_until_complete(db_manager.close())
-                    logger.info("数据库连接已关闭")
+                # 清理线程管理器（包括数据库、router 等）
+                from src.core.thread_manager import thread_manager
+                loop.run_until_complete(thread_manager.cleanup_all())
+                logger.info("线程管理器清理完成")
             except Exception as e:
-                logger.error(f"清理数据库时出错: {e}", exc_info=True)
+                logger.error(f"清理线程管理器时出错: {e}", exc_info=True)
             
             # 退出应用
             logger.info("应用程序退出")

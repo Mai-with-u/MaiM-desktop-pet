@@ -8,7 +8,7 @@ import time
 import uuid
 
 from config import load_config
-from src.core.router import router
+from src.core.protocol_manager import protocol_manager
 
 # 加载配置
 config = load_config()
@@ -172,8 +172,12 @@ class Chat:
                 additional_config=additional_config
             )
             
-            # 发送消息
-            await router.send_message(message_base)
+            # 使用协议管理器发送消息
+            send_success = await protocol_manager.send_message(message_base.to_dict())
+            
+            if not send_success:
+                logger.warning(f"消息发送失败 - 协议管理器返回失败")
+                return False
             
             # 将发送的消息保存到数据库
             try:

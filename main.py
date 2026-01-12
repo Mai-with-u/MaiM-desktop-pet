@@ -1,40 +1,16 @@
 import sys
-import threading
 import asyncio
 import atexit
 import src.util.except_hook
 from PyQt5.QtWidgets import QApplication
+from src.core.thread_manager import thread_manager
 
 app = QApplication(sys.argv)
 
-# 全局变量，用于存储清理函数
-cleanup_functions = []
-
-def register_cleanup(func):
-    """注册清理函数"""
-    cleanup_functions.append(func)
-
-async def cleanup_all():
-    """执行所有清理操作"""
-    from src.util.logger import logger
-    
-    logger.info("开始清理资源...")
-    
-    # 执行所有注册的清理函数
-    for cleanup_func in cleanup_functions:
-        try:
-            if asyncio.iscoroutinefunction(cleanup_func):
-                await cleanup_func()
-            else:
-                cleanup_func()
-        except Exception as e:
-            logger.error(f"清理函数执行失败: {e}", exc_info=True)
-    
-    logger.info("资源清理完成")
-
-def run():
+async def run_router():
+    """运行路由器"""
     from src.core.router import main
-    asyncio.run(main())
+    await main()
 
 async def initialize_database():
     """初始化数据库"""
@@ -68,9 +44,24 @@ if __name__ == "__main__":
         # 初始化数据库（异步）
         asyncio.run(initialize_database())
         
-        # 在单独线程中运行 FastAPI
-        api_thread = threading.Thread(target=run, daemon=True)
-        api_thread.start()
+        # 各个模块向线程管理器注册自己的线程
+        print("正在注册后台服务...")
+        
+        # 注册 MaimRouter
+        from src.core.router import register_router
+        register_router()
+        
+        # 如果需要，可以在这里注册其他服务
+        # from src.core.some_service import register_some_service
+        # register_some_service()
+        
+        print(f"已注册 {len(thread_manager._thread_configs)} 个后台服务")
+        
+        # 启动所有延迟注册的线程
+        thread_manager.start_all()
+        
+        # 打印线程状态
+        thread_manager.print_status()
         
         from src.frontend.presentation.pet import desktop_pet
         chat_pet = desktop_pet
