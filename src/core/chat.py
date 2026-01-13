@@ -1,14 +1,21 @@
 """
 聊天模块 - 处理消息发送和创建
+
+支持的消息类型：
+- text: 纯文本消息
+- image: 图片消息（base64编码，无头部）
+- emoji: 表情消息（base64编码，无头部）
+- seglist: 复合消息，包含多个不同类型的 Seg
 """
 
 from maim_message import UserInfo, Seg, MessageBase, BaseMessageInfo, FormatInfo
-from typing import Optional
+from typing import Optional, List, Union
 import time
 import uuid
 
 from config import load_config
 from src.core.protocol_manager import protocol_manager
+from src.util.image_util import pixmap_to_base64
 
 # 加载配置
 config = load_config()
@@ -243,12 +250,204 @@ class Chat:
         """发送表情消息
         
         参数:
-            emoji: 表情内容
+            emoji: 表情内容（base64编码）
         
         返回:
             bool: 是否发送成功
         """
         return await self.send(text=emoji, msg_type="emoji")
+    
+    def _create_seglist_segment(
+        self,
+        segments: List[Union[Seg, tuple]]
+    ) -> Seg:
+        """创建 seglist 类型的消息片段
+        
+        参数:
+            segments: Seg 对象列表，或 (type, data) 元组列表
+        
+        返回:
+            Seg: seglist 类型的消息片段
+        
+        示例:
+            >>> # 使用 Seg 对象
+            >>> seg1 = Seg("text", "你好")
+            >>> seg2 = Seg("image", "base64...")
+            >>> seglist = self._create_seglist_segment([seg1, seg2])
+            >>> 
+            >>> # 使用元组
+            >>> seglist = self._create_seglist_segment([
+            ...     ("text", "你好"),
+            ...     ("image", "base64..."),
+            ... ])
+        """
+        seg_list = []
+        
+        for seg in segments:
+            if isinstance(seg, Seg):
+                # 已经是 Seg 对象，直接使用
+                seg_list.append(seg)
+            elif isinstance(seg, tuple) and len(seg) == 2:
+                # 元组形式，创建 Seg 对象
+                seg_type, seg_data = seg
+                
+                # 确保 seg_data 是字符串类型
+                if isinstance(seg_data, dict):
+                    # 如果是字典，转换为字符串
+                    import json
+                    seg_data = json.dumps(seg_data, ensure_ascii=False)
+                elif not isinstance(seg_data, str):
+                    # 其他非字符串类型，转换为字符串
+                    seg_data = str(seg_data)
+                
+                seg_list.append(Seg(type=seg_type, data=seg_data))
+            else:
+                logger.warning(f"无效的段格式，已跳过: {seg}")
+        
+        return Seg(type="seglist", data=seg_list)
+    
+    async def send_seglist(
+        self,
+        segments: List[Union[Seg, tuple]],
+        user_id: Optional[str] = None,
+        user_nickname: Optional[str] = None,
+        user_cardname: Optional[str] = None,
+        additional_config: Optional[dict] = None
+    ) -> bool:
+        """发送复合消息（seglist）
+        
+        参数:
+            segments: Seg 对象列表或 (type, data) 元组列表
+            user_id: 用户ID
+            user_nickname: 用户昵称
+            user_cardname: 用户群名片
+            additional_config: 附加配置
+        
+        返回:
+            bool: 是否发送成功
+        
+        示例:
+            >>> # 发送文本+图片
+            >>> await chat_util.send_seglist([
+            ...     ("text", "这是一张图片："),
+            ...     ("image", "base64..."),
+            ... ])
+            >>> 
+            >>> # 发送表情+文本
+            >>> await chat_util.send_seglist([
+            ...     ("emoji", "base64..."),
+            ...     ("text", "哈哈"),
+            ... ])
+        """
+        try:
+            # 创建 seglist 段
+            seglist = self._create_seglist_segment(segments)
+            
+            # 创建用户信息
+            user_info = self._create_user_info(user_id, user_nickname, user_cardname)
+            message_info = self._create_message_info(user_info, additional_config)
+            
+            # 创建消息
+            message_base = MessageBase(
+                message_info=message_info,
+                message_segment=seglist,
+                raw_message=""
+            )
+            
+            # 使用协议管理器发送消息
+            send_success = await protocol_manager.send_message(message_base.to_dict())
+            
+            if not send_success:
+                logger.warning(f"seglist 消息发送失败 - 协议管理器返回失败")
+                return False
+            
+            # 将发送的消息保存到数据库
+            try:
+                if db_manager.is_initialized():
+                    save_success = await db_manager.save_message(message_base.to_dict())
+                    if save_success:
+                        logger.debug(f"seglist 消息已保存到数据库")
+                    else:
+                        logger.warning(f"seglist 消息保存到数据库失败")
+                else:
+                    logger.debug(f"数据库未初始化，跳过消息存储")
+            except Exception as db_error:
+                logger.error(f"保存 seglist 消息到数据库时出错: {db_error}", exc_info=True)
+            
+            logger.info(f"seglist 消息发送成功 - ID: {message_base.message_info.message_id}, "
+                       f"段数: {len(segments)}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"seglist 消息发送失败 - 错误: {e}", exc_info=True)
+            return False
+    
+    async def send_text_and_image(
+        self,
+        text: str,
+        image_data: str,
+        user_id: Optional[str] = None,
+        user_nickname: Optional[str] = None,
+        user_cardname: Optional[str] = None,
+        additional_config: Optional[dict] = None
+    ) -> bool:
+        """发送文本+图片的复合消息（便捷方法）
+        
+        参数:
+            text: 文本内容
+            image_data: 图片数据（base64编码，无头部）
+            user_id: 用户ID
+            user_nickname: 用户昵称
+            user_cardname: 用户群名片
+            additional_config: 附加配置
+        
+        返回:
+            bool: 是否发送成功
+        """
+        return await self.send_seglist([
+            ("text", text),
+            ("image", image_data),
+        ], user_id, user_nickname, user_cardname, additional_config)
+    
+    async def send_pixmap_with_text(
+        self,
+        pixmap,
+        text: str = "",
+        user_id: Optional[str] = None,
+        user_nickname: Optional[str] = None,
+        user_cardname: Optional[str] = None,
+        additional_config: Optional[dict] = None
+    ) -> bool:
+        """发送 QPixmap 图片（带可选文本）
+        
+        参数:
+            pixmap: PyQt5.QtGui.QPixmap 对象
+            text: 可选的文本说明
+            user_id: 用户ID
+            user_nickname: 用户昵称
+            user_cardname: 用户群名片
+            additional_config: 附加配置
+        
+        返回:
+            bool: 是否发送成功
+        """
+        try:
+            # 将 QPixmap 转换为 base64（无头部）
+            image_base64 = pixmap_to_base64(pixmap, add_header=False)
+            
+            if text:
+                # 发送文本+图片
+                return await self.send_text_and_image(
+                    text, image_base64, user_id, user_nickname, user_cardname, additional_config
+                )
+            else:
+                # 只发送图片
+                return await self.send_image(image_base64)
+                
+        except Exception as e:
+            logger.error(f"发送 QPixmap 失败 - 错误: {e}", exc_info=True)
+            return False
 
 
 # 创建全局实例

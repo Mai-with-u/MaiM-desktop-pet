@@ -255,17 +255,23 @@ class DesktopPet(QWidget):
         """全局截图快捷键触发"""
         logger.info("全局截图快捷键被触发")
         
-        # 激活窗口并置于前台
+        # 使用 QTimer.singleShot 确保在主线程中执行 UI 操作
+        # pynput 的热键回调在单独的线程中，必须在主线程中执行 Qt UI 操作
+        QTimer.singleShot(0, self._do_start_screenshot)
+    
+    def _do_start_screenshot(self):
+        """实际执行截图的方法（确保在主线程中）"""
+        # 检查截图状态，避免重复触发
+        if self.screenshot_manager.is_screenshotting:
+            logger.warning("截图正在进行中，忽略新的截图请求")
+            return
+        
+        # 激活窗口并置于前台（必须在主线程中）
         self.activateWindow()
         self.raise_()
         self.showNormal()
         
         # 确保窗口获得焦点
-        QTimer.singleShot(0, self._do_start_screenshot)
-    
-    def _do_start_screenshot(self):
-        """实际执行截图的方法（确保在主线程中）"""
-        # 再次确保窗口有焦点
         self.setFocus()
         
         # 执行截图
@@ -539,9 +545,18 @@ class ScreenshotManager:
     def __init__(self, parent):
         self.parent = parent
         self.screenshot_selector = None
+        self.is_screenshotting = False  # 防止重复启动截图
     
     def start_screenshot(self):
         """启动截图"""
+        # 如果已经在截图中，忽略新的截图请求
+        if self.is_screenshotting:
+            logger.warning("截图正在进行中，忽略新的截图请求")
+            return
+        
+        self.is_screenshotting = True
+        logger.info("启动截图...")
+        
         self.parent.hide()
         for chat_bubble in self.parent.chat_bubbles._active_bubbles:
             chat_bubble.hide()
@@ -549,15 +564,33 @@ class ScreenshotManager:
         self.screenshot_selector = PetScreenshotSelector(self.parent)
         self.screenshot_selector.show()
     
-    def handle_screenshot(self, pixmap):
-        """处理截图结果"""
+    def handle_screenshot(self, pixmap, text=""):
+        """处理截图结果
+        
+        参数:
+            pixmap: 截图 QPixmap
+            text: 用户输入的文本说明（可选）
+        """
+        # 重置截图状态
+        self.is_screenshotting = False
+        logger.info("截图处理完成")
+        
         self.parent.show()
         for chat_bubble in self.parent.chat_bubbles._active_bubbles:
             chat_bubble.show()
         
+        # 显示截图气泡
         self.parent.show_message(pixmap=pixmap, msg_type="sent")
-        base64_str = pixmap_to_base64(pixmap)
-        asyncio.run(chat_util.easy_to_send(base64_str, "image"))
+        
+        # 发送消息
+        if text:
+            # 有文本，发送文本+图片的 seglist
+            logger.info(f"发送文本+图片复合消息，文本: {text}")
+            asyncio.run(chat_util.send_pixmap_with_text(pixmap, text))
+        else:
+            # 无文本，只发送图片
+            logger.info("发送纯图片消息")
+            asyncio.run(chat_util.send_pixmap_with_text(pixmap, ""))
 
 
 class PetScreenshotSelector(ScreenshotSelector):
@@ -567,8 +600,34 @@ class PetScreenshotSelector(ScreenshotSelector):
         super().__init__()
         self.pet = pet
     
-    def on_screenshot_captured(self, pixmap):
-        self.pet.screenshot_manager.handle_screenshot(pixmap)
+    def on_screenshot_captured(self, pixmap, text=""):
+        """处理截图结果
+        
+        参数:
+            pixmap: 截图 QPixmap
+            text: 用户输入的文本说明（可选）
+        """
+        self.pet.screenshot_manager.handle_screenshot(pixmap, text)
+    
+    def on_screenshot_canceled(self):
+        """处理取消截图"""
+        # 重置截图状态
+        self.pet.screenshot_manager.is_screenshotting = False
+        logger.info("截图已取消，已重置截图状态")
+        
+        # 恢复主窗口和气泡显示
+        self.pet.show()
+        for chat_bubble in self.pet.chat_bubbles._active_bubbles:
+            chat_bubble.show()
+    
+    def closeEvent(self, event):
+        """窗口关闭事件"""
+        # 重置截图状态
+        if self.pet.screenshot_manager.is_screenshotting:
+            self.pet.screenshot_manager.is_screenshotting = False
+            logger.info("截图窗口关闭，已重置截图状态")
+        
+        super().closeEvent(event)
 
 
 # 创建实例

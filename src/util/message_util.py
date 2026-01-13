@@ -63,10 +63,32 @@ def dict_to_message_base(message: Dict[str, Any]):
         )
         
         # 构建 Seg
-        seg = Seg(
-            type=message_segment_data.get('type', 'text'),
-            data=message_segment_data.get('data', '')
-        )
+        msg_type = message_segment_data.get('type', 'text')
+        seg_data = message_segment_data.get('data', '')
+        
+        # 处理 seglist 类型
+        if msg_type == 'seglist':
+            # seglist 的 data 应该是 Seg 对象列表
+            seg_list = []
+            if isinstance(seg_data, list):
+                for item in seg_data:
+                    if isinstance(item, dict):
+                        # 从字典创建 Seg 对象
+                        sub_seg = Seg(
+                            type=item.get('type', 'text'),
+                            data=item.get('data', '')
+                        )
+                        seg_list.append(sub_seg)
+                    elif isinstance(item, Seg):
+                        # 已经是 Seg 对象，直接使用
+                        seg_list.append(item)
+            seg = Seg(type='seglist', data=seg_list)
+        else:
+            # 普通消息类型
+            seg = Seg(
+                type=msg_type,
+                data=seg_data if isinstance(seg_data, str) else str(seg_data)
+            )
         
         # 构建 MessageBase
         message_base = MessageBase(
