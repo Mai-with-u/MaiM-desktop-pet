@@ -73,7 +73,7 @@ class EventManager(QObject):
         self._smooth_timer.timeout.connect(self._smooth_update_live2d)
         self._smooth_timer.start(16)  # 60 FPS
     
-    def set_managers(self, render_manager, state_manager, bubble_manager, screenshot_manager):
+    def set_managers(self, render_manager, state_manager, bubble_manager, screenshot_manager, hotkey_manager=None):
         """
         设置其他管理器的引用
         
@@ -82,11 +82,13 @@ class EventManager(QObject):
             state_manager: 状态管理器
             bubble_manager: 气泡管理器
             screenshot_manager: 截图管理器
+            hotkey_manager: 热键管理器（可选）
         """
         self.render_manager = render_manager
         self.state_manager = state_manager
         self.bubble_manager = bubble_manager
         self.screenshot_manager = screenshot_manager
+        self.hotkey_manager = hotkey_manager
     
     def handle_mouse_press(self, event):
         """

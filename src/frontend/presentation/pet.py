@@ -135,7 +135,12 @@ class DesktopPet(QWidget):
     
     def init_managers(self):
         """初始化核心管理器"""
-        from src.frontend.core.managers import RenderManager, EventManager, StateManager
+        from src.frontend.core.managers import (
+            RenderManager,
+            EventManager,
+            StateManager,
+            HotkeyManager
+        )
         
         # 渲染管理器
         self.render_manager = RenderManager(self)
@@ -145,6 +150,9 @@ class DesktopPet(QWidget):
         
         # 事件管理器
         self.event_manager = EventManager(self)
+        
+        # 热键管理器
+        self.hotkey_manager = HotkeyManager()
         
         # 气泡管理器
         self.bubble_manager = BubbleManager(self)
@@ -157,8 +165,13 @@ class DesktopPet(QWidget):
             render_manager=self.render_manager,
             state_manager=self.state_manager,
             bubble_manager=self.bubble_manager,
-            screenshot_manager=self.screenshot_manager
+            screenshot_manager=self.screenshot_manager,
+            hotkey_manager=self.hotkey_manager
         )
+        
+        # 注册热键管理器的清理函数
+        from src.core.thread_manager import thread_manager
+        thread_manager.register_cleanup(self.hotkey_manager.cleanup)
         
         logger.info("核心管理器初始化完成")
     
@@ -207,10 +220,56 @@ class DesktopPet(QWidget):
         logger.info("托盘图标初始化完成")
     
     def init_shortcuts(self):
-        """初始化快捷键"""
+        """初始化全局快捷键"""
+        logger.info(f"开始初始化全局快捷键...")
+        
+        # 注册截图热键
         if config.Screenshot_shortcuts is not None:
+            success = self.hotkey_manager.register_hotkey(
+                name="screenshot",
+                shortcut_str=config.Screenshot_shortcuts,
+                callback=self._on_screenshot_hotkey
+            )
+            
+            if success:
+                logger.info(f"✓ 已注册全局截图快捷键: {config.Screenshot_shortcuts}")
+            else:
+                # 降级使用 QShortcut
+                logger.warning("全局热键注册失败，降级使用 QShortcut")
+                self._init_fallback_shortcut()
+        else:
+            logger.info(f"截图快捷键未配置（值为 None）")
+        
+        # 启动热键监听器
+        self.hotkey_manager.start()
+    
+    def _init_fallback_shortcut(self):
+        """降级使用 QShortcut（仅窗口有焦点时有效）"""
+        if config.Screenshot_shortcuts is not None:
+            logger.info(f"使用 QShortcut 注册截图快捷键: {config.Screenshot_shortcuts}")
             shortcut = QShortcut(QKeySequence(config.Screenshot_shortcuts), self)
             shortcut.activated.connect(self.screenshot_manager.start_screenshot)
+            logger.info(f"✓ 截图快捷键注册成功（仅窗口有焦点时有效）")
+    
+    def _on_screenshot_hotkey(self):
+        """全局截图快捷键触发"""
+        logger.info("全局截图快捷键被触发")
+        
+        # 激活窗口并置于前台
+        self.activateWindow()
+        self.raise_()
+        self.showNormal()
+        
+        # 确保窗口获得焦点
+        QTimer.singleShot(0, self._do_start_screenshot)
+    
+    def _do_start_screenshot(self):
+        """实际执行截图的方法（确保在主线程中）"""
+        # 再次确保窗口有焦点
+        self.setFocus()
+        
+        # 执行截图
+        self.screenshot_manager.start_screenshot()
     
     def _register_cleanup_functions(self):
         """将各管理器的清理函数注册到线程管理器"""
@@ -226,6 +285,9 @@ class DesktopPet(QWidget):
     
     def _cleanup_pet_resources(self):
         """清理桌面宠物特有的资源"""
+        # 注意：热键管理器的清理已经通过线程管理器注册
+        # 不需要在这里手动清理
+        
         # 恢复终端显示
         if not self.state_manager.is_console_visible():
             self.state_manager.show_console()

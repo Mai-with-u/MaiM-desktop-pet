@@ -6,9 +6,11 @@
 from .render_manager import RenderManager
 from .event_manager import EventManager
 from .state_manager import StateManager
+from .hotkey_manager import HotkeyManager
 
 __all__ = [
     'RenderManager',
     'EventManager',
-    'StateManager'
+    'StateManager',
+    'HotkeyManager'
 ]
