@@ -11,6 +11,7 @@ from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QIcon, QKeySequence
 
 from src.core.chat import chat_util
+from src.core.thread_manager import thread_manager
 from src.frontend.signals import signals_bus
 from src.frontend.bubble_speech import SpeechBubbleList
 from src.frontend.bubble_input import BubbleInput
@@ -80,6 +81,9 @@ class DesktopPet(QWidget):
         
         # 初始化管理器
         self.init_managers()
+        
+        # 注册清理函数到线程管理器
+        self._register_cleanup_functions()
         
         # 初始化子系统
         self.init_subsystems()
@@ -208,6 +212,39 @@ class DesktopPet(QWidget):
             shortcut = QShortcut(QKeySequence(config.Screenshot_shortcuts), self)
             shortcut.activated.connect(self.screenshot_manager.start_screenshot)
     
+    def _register_cleanup_functions(self):
+        """将各管理器的清理函数注册到线程管理器"""
+        # 注册前端管理器的清理函数
+        thread_manager.register_cleanup(self.render_manager.cleanup)
+        thread_manager.register_cleanup(self.event_manager.cleanup)
+        thread_manager.register_cleanup(self.state_manager.cleanup)
+        
+        # 注册桌面宠物自己的清理函数
+        thread_manager.register_cleanup(self._cleanup_pet_resources)
+        
+        logger.info("清理函数已注册到线程管理器")
+    
+    def _cleanup_pet_resources(self):
+        """清理桌面宠物特有的资源"""
+        # 恢复终端显示
+        if not self.state_manager.is_console_visible():
+            self.state_manager.show_console()
+        
+        # 隐藏托盘图标
+        if hasattr(self, 'tray_icon') and self.tray_icon:
+            self.tray_icon.hide()
+            self.tray_icon = None
+        
+        # 隐藏所有窗口
+        self.hide()
+        if hasattr(self, 'chat_bubbles'):
+            for bubble in self.chat_bubbles._active_bubbles:
+                bubble.hide()
+        if hasattr(self, 'bubble_input'):
+            self.bubble_input.hide()
+        
+        logger.info("桌面宠物资源已清理")
+    
     def create_tray_menu(self) -> QMenu:
         """创建托盘菜单"""
         menu = QMenu()
@@ -267,35 +304,13 @@ class DesktopPet(QWidget):
     
     def _do_safe_quit(self):
         """实际执行退出的方法"""
-        # 先清理资源
-        try:
-            self.cleanup_resources()
-            logger.info("资源清理完成")
-        except Exception as e:
-            logger.error(f"清理资源时出错: {e}", exc_info=True)
+        # 清理所有资源（包括前端和协议管理器的清理）
+        self.cleanup_resources()
         
-        # 隐藏托盘图标
-        try:
-            if hasattr(self, 'tray_icon') and self.tray_icon:
-                self.tray_icon.hide()
-        except Exception as e:
-            logger.error(f"隐藏托盘图标时出错: {e}", exc_info=True)
-        
-        # 隐藏所有窗口
-        try:
-            self.hide()
-            if hasattr(self, 'chat_bubbles'):
-                for bubble in self.chat_bubbles._active_bubbles:
-                    bubble.hide()
-            if hasattr(self, 'bubble_input'):
-                self.bubble_input.hide()
-        except Exception as e:
-            logger.error(f"隐藏窗口时出错: {e}", exc_info=True)
-        
-        # 直接调用 os._exit(0) 强制终止进程
-        # 不依赖 QApplication.quit() 的返回值
+        # 退出应用程序
+        logger.info("退出应用程序")
+        # 使用 os._exit 强制终止进程，避免等待非守护线程
         import os
-        logger.info("调用 os._exit(0) 立即终止进程...")
         os._exit(0)
     
     def handle_user_input(self, text):
@@ -315,59 +330,69 @@ class DesktopPet(QWidget):
         logger.info("开始清理资源...")
         
         try:
-            # 恢复终端显示
-            if not self.state_manager.is_console_visible():
-                self.state_manager.show_console()
+            # 执行线程管理器中注册的所有清理函数
+            # 这包括了前端管理器的清理函数和协议管理器的清理函数
+            from src.core.thread_manager import thread_manager
             
-            # 隐藏托盘图标
-            if hasattr(self, 'tray_icon') and self.tray_icon:
-                self.tray_icon.hide()
-                self.tray_icon = None
+            logger.info(f"共有 {len(thread_manager._cleanup_functions)} 个清理函数")
             
-            # 清理前端资源
-            logger.info("清理前端资源...")
-            try:
-                if hasattr(self, 'event_manager') and self.event_manager:
-                    self.event_manager.cleanup()
-            except Exception as e:
-                logger.error(f"清理事件管理器时出错: {e}", exc_info=True)
+            # 分离同步和异步清理函数
+            sync_cleanup_funcs = [
+                f for f in thread_manager._cleanup_functions 
+                if not asyncio.iscoroutinefunction(f)
+            ]
+            async_cleanup_funcs = [
+                f for f in thread_manager._cleanup_functions 
+                if asyncio.iscoroutinefunction(f)
+            ]
             
-            try:
-                if hasattr(self, 'render_manager') and self.render_manager:
-                    self.render_manager.cleanup()
-            except Exception as e:
-                logger.error(f"清理渲染管理器时出错: {e}", exc_info=True)
+            # 执行同步清理函数
+            for cleanup_func in sync_cleanup_funcs:
+                try:
+                    logger.info(f"[同步] 执行清理函数: {cleanup_func.__name__}")
+                    cleanup_func()
+                    logger.info(f"[同步] {cleanup_func.__name__} 执行完成")
+                except Exception as e:
+                    logger.error(
+                        f"执行同步清理函数时出错: {cleanup_func.__name__}, 错误: {e}",
+                        exc_info=True
+                    )
             
-            try:
-                if hasattr(self, 'state_manager') and self.state_manager:
-                    self.state_manager.cleanup()
-            except Exception as e:
-                logger.error(f"清理状态管理器时出错: {e}", exc_info=True)
-            
-            try:
-                from src.core.thread_manager import thread_manager
-                
-                # 不等待清理完成，直接让守护线程自然退出
-                # ProtocolManager 是守护线程，会在主进程退出时自动清理
-                # 只需要执行清理函数，不需要等待异步任务完成
-                logger.info(f"共有 {len(thread_manager._cleanup_functions)} 个清理函数")
-                for i, cleanup_func in enumerate(thread_manager._cleanup_functions):
+            # 执行异步清理函数（创建新的事件循环）
+            if async_cleanup_funcs:
+                try:
+                    logger.info(f"开始执行 {len(async_cleanup_funcs)} 个异步清理函数...")
+                    # 创建新的事件循环
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
                     try:
-                        logger.info(f"[{i+1}/{len(thread_manager._cleanup_functions)}] 执行清理函数: {cleanup_func.__name__}")
-                        if not asyncio.iscoroutinefunction(cleanup_func):
-                            logger.info(f"  -> {cleanup_func.__name__} 是同步函数，开始执行...")
-                            cleanup_func()
-                            logger.info(f"  -> {cleanup_func.__name__} 执行完成")
-                        else:
-                            logger.info(f"  -> {cleanup_func.__name__} 是异步函数，跳过（让守护线程自动清理）")
-                    except Exception as e:
-                        logger.error(f"执行清理函数时出错: {cleanup_func.__name__}, 错误: {e}", exc_info=True)
-                
-                logger.info("线程管理器清理完成（守护线程将自动退出）")
-            except Exception as e:
-                logger.error(f"清理线程管理器时出错: {e}", exc_info=True)
+                        for cleanup_func in async_cleanup_funcs:
+                            try:
+                                logger.info(f"[异步] 执行清理函数: {cleanup_func.__name__}")
+                                loop.run_until_complete(cleanup_func())
+                                logger.info(f"[异步] {cleanup_func.__name__} 执行完成")
+                            except Exception as e:
+                                logger.error(
+                                    f"执行异步清理函数时出错: {cleanup_func.__name__}, 错误: {e}",
+                                    exc_info=True
+                                )
+                    finally:
+                        # 取消所有未完成的任务
+                        pending = asyncio.all_tasks(loop)
+                        if pending:
+                            logger.info(f"取消 {len(pending)} 个未完成的异步任务...")
+                            for task in pending:
+                                task.cancel()
+                            # 等待任务被取消
+                            loop.run_until_complete(
+                                asyncio.gather(*pending, return_exceptions=True)
+                            )
+                        loop.close()
+                        logger.info("事件循环已关闭")
+                except Exception as e:
+                    logger.error(f"执行异步清理函数时出错: {e}", exc_info=True)
             
-            logger.info("cleanup_resources() 完成")
+            logger.info("所有资源清理完成")
             
         except Exception as e:
             logger.error(f"清理资源过程中出错: {e}", exc_info=True)

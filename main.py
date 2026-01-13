@@ -1,48 +1,11 @@
 import sys
 import asyncio
-import atexit
 import src.util.except_hook
 from PyQt5.QtWidgets import QApplication
 from src.core.thread_manager import thread_manager
 
 app = QApplication(sys.argv)
 
-# 全局安全退出函数
-def safe_quit():
-    """安全退出应用 - 统一管理所有清理和退出逻辑"""
-    from src.util.logger import logger
-    import sys
-    
-    logger.info("=" * 60)
-    logger.info("safe_quit() 被调用 - main.py (atexit 回调)")
-    logger.info("=" * 60)
-    
-    try:
-        # 1. 清理桌面宠物资源
-        from src.frontend.presentation.pet import desktop_pet
-        if desktop_pet:
-            logger.info("开始清理桌面宠物资源...")
-            desktop_pet.cleanup_resources()
-            logger.info("桌面宠物资源清理完成")
-        
-        # 2. 退出 Qt 事件循环
-        logger.info("准备退出 Qt 事件循环...")
-        app.quit()
-        logger.info("QApplication.quit() 已调用")
-        
-        # 3. 不需要调用 sys.exit(0)，因为 atexit 回调已经在退出过程中了
-        logger.info("atexit 回调完成，进程即将退出...")
-        
-    except SystemExit as e:
-        # SystemExit 是正常的退出，记录日志后重新抛出
-        logger.info(f"程序正在退出，退出码: {e.code}")
-        raise
-    except Exception as e:
-        logger.error(f"安全退出过程中出错: {e}", exc_info=True)
-        # atexit 回调中的错误不会阻止进程退出，所以不需要 sys.exit(1)
-
-# 注册为 atexit 回调
-atexit.register(safe_quit)
 
 async def run_router():
     """运行路由器"""
