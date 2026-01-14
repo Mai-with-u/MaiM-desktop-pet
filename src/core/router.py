@@ -79,18 +79,49 @@ async def run_protocol_manager_async():
     protocol_manager.register_message_handler(message_handler)
     
     try:
-        # 检查配置中是否有协议
-        if not config.protocols or len(config.protocols) == 0:
-            # 如果没有配置协议，使用旧的 url 和 platform 创建默认配置
-            logger.warning("配置文件中未找到协议配置，使用旧配置创建默认 Maim 协议")
-            protocol_configs = [{
-                'type': 'maim',
-                'url': config.url,
-                'platform': config.platform
-            }]
-        else:
-            # 转换为字典格式
-            protocol_configs = [p.dict() if hasattr(p, 'dict') else p for p in config.protocols]
+        # 尝试从 model_config.toml 加载协议配置（优先）
+        protocol_configs = None
+        
+        try:
+            from config import load_model_config, load_protocol_configs
+            model_config = load_model_config()
+            protocol_configs = load_protocol_configs(model_config)
+            logger.info("✓ 从 model_config.toml 加载协议配置成功")
+        except Exception as e:
+            logger.debug(f"无法从 model_config.toml 加载配置: {e}")
+            protocol_configs = None
+        
+        # 如果 model_config.toml 加载失败或没有配置，使用主配置中的协议
+        if not protocol_configs:
+            # 检查配置中是否有协议
+            if not config.protocols or len(config.protocols) == 0:
+                # 如果没有配置协议，使用旧的 url 和 platform 创建默认配置
+                logger.warning("=" * 60)
+                logger.warning("⚠️  正在使用废弃的配置方式")
+                logger.warning("=" * 60)
+                logger.warning("config.protocols 为空，使用旧的 url 和 platform 配置")
+                logger.warning(f"URL: {config.url}")
+                logger.warning(f"Platform: {config.platform}")
+                logger.warning("")
+                logger.warning("建议迁移到新的配置系统：")
+                logger.warning("1. 在 model_config.toml 中配置 [[api_providers]]")
+                logger.warning("2. 参考 model_config.toml.template 获取详细说明")
+                logger.warning("=" * 60)
+                protocol_configs = [{
+                    'type': 'maim',
+                    'url': config.url,
+                    'platform': config.platform
+                }]
+            else:
+                # 转换为字典格式
+                protocol_configs = [p.dict() if hasattr(p, 'dict') else p for p in config.protocols]
+                logger.warning("=" * 60)
+                logger.warning("⚠️  正在使用废弃的配置方式")
+                logger.warning("=" * 60)
+                logger.warning("检测到 config.toml 中存在 [[protocols]] 配置")
+                logger.warning("此配置方式已废弃，建议迁移到 model_config.toml")
+                logger.warning("参考 model_config.toml.template 获取详细说明")
+                logger.warning("=" * 60)
         
         # 初始化协议管理器
         await protocol_manager.initialize(protocol_configs)

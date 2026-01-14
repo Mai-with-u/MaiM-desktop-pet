@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QShor
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QIcon, QKeySequence
 
-from src.core.chat import chat_util
+from src.core.chat_manager import chat_manager
 from src.core.thread_manager import thread_manager
 from src.frontend.signals import signals_bus
 from src.frontend.bubble_speech import SpeechBubbleList
@@ -381,11 +381,16 @@ class DesktopPet(QWidget):
         import os
         os._exit(0)
     
-    def handle_user_input(self, text):
+    async def handle_user_input(self, text):
         """处理用户输入"""
         logger.info(f"收到用户输入: {text}")
         self.show_message(text=text, msg_type="sent")
-        asyncio.run(chat_util.easy_to_send(str(text), "text"))
+        await chat_manager.send_text(
+            str(text),
+            additional_config={
+                "maimcore_reply_probability_gain": 1  # 回复概率增益（Maim 协议专用）
+            }
+        )
     
     def cleanup_resources(self):
         """清理所有资源（不包含退出逻辑）"""
@@ -586,11 +591,11 @@ class ScreenshotManager:
         if text:
             # 有文本，发送文本+图片的 seglist
             logger.info(f"发送文本+图片复合消息，文本: {text}")
-            asyncio.run(chat_util.send_pixmap_with_text(pixmap, text))
+            asyncio.run(chat_manager.send_pixmap_with_text(pixmap, text))
         else:
             # 无文本，只发送图片
             logger.info("发送纯图片消息")
-            asyncio.run(chat_util.send_pixmap_with_text(pixmap, ""))
+            asyncio.run(chat_manager.send_pixmap_with_text(pixmap, ""))
 
 
 class PetScreenshotSelector(ScreenshotSelector):

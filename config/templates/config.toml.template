@@ -14,19 +14,18 @@
 # 基础配置
 # ----------------------------------------------------------------------
 
-# WebSocket 服务器地址（必填）
-# 连接到麦麦后端服务器的 WebSocket 地址
-url = "ws://127.0.0.1:8000/ws"
-
 # 桌宠昵称
 Nickname = "麦麦"
 
 # 用户昵称（可选）
 userNickname = ""
 
-# 平台标识
+# 平台标识（已废弃，请使用 model_config.toml 中的协议配置）
 # 如果启用 allow_multiple_source_conversion，会自动添加 UUID
 platform = "desktop-pet"
+
+# ⚠️ 注意：WebSocket 服务器地址已迁移到 model_config.toml
+# 请在 model_config.toml 的 [[protocols]] 配置中设置 url 参数
 
 # 是否隐藏控制台窗口
 # true: 启动时隐藏终端窗口
@@ -215,22 +214,37 @@ texture_cache_size = 256
 # 通信协议配置
 # ----------------------------------------------------------------------
 
-# 支持多个协议同时配置，程序启动时会自动选择第一个协议作为默认协议
-# 可以在运行时切换不同的协议
+# ⚠️ 注意：此协议配置已废弃
+# 请使用 model_config.toml 配置文件管理所有协议和模型配置
+# 
+# model_config.toml 提供更强大的功能：
+# - 集中管理多个 API 提供商（Maim、OpenAI、DeepSeek 等）
+# - 灵活的模型配置和任务映射
+# - 更好的可扩展性和维护性
+#
+# 如果你在 model_config.toml 中配置了协议，此处的配置将被忽略
+# 
+# 迁移步骤：
+# 1. 打开 model_config.toml 文件
+# 2. 在 [[api_providers]] 部分添加你的协议配置
+# 3. 在 [[models]] 部分定义模型
+# 4. 在 [model_task_config] 部分配置任务使用的模型
+# 
+# 示例（参考 model_config.toml.template）：
+# [[api_providers]]
+# name = "maim_server"
+# type = "maim"
+# enabled = true
+# url = "ws://127.0.0.1:8000/ws"
+# platform = "desktop-pet"
 
-[[protocols]]
-# 协议类型：maim 或 openai
-type = "maim"
-
-# Maim 协议配置（WebSocket 连接）
-# WebSocket 服务器地址
-url = "ws://127.0.0.1:8000/ws"
-
-# 平台标识
-platform = "desktop-pet"
-
-# 认证令牌（可选）
-# token = "your_token_here"
+# --------------------------------------------------
+# 旧配置（已废弃，保留用于向后兼容）
+# --------------------------------------------------
+# [[protocols]]
+# type = "maim"
+# url = "ws://127.0.0.1:8000/ws"
+# platform = "desktop-pet"
 
 # --------------------------------------------------
 # OpenAI 协议配置示例

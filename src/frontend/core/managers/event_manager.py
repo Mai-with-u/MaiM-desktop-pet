@@ -256,8 +256,8 @@ class EventManager(QObject):
             
             # 发送消息
             import asyncio
-            from src.core.chat import chat_util
-            asyncio.run(chat_util.easy_to_send("(这是一个类似于摸摸头的友善动作)", "text"))
+            from src.core.chat_manager import chat_manager
+            asyncio.run(chat_manager.send_text("(这是一个类似于摸摸头的友善动作)"))
         
         event.accept()
     

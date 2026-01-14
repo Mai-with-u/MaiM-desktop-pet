@@ -173,6 +173,7 @@ Thumbs.db
 logs/*
 !logs/.gitkeep
 config.toml
+model_config.toml
 
 # 忽略数据库文件
 data/*

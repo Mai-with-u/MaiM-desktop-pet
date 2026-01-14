@@ -3,8 +3,8 @@
 使用 Pydantic 进行配置验证
 """
 
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
 
 
 class InterfaceConfig(BaseModel):
@@ -77,6 +77,71 @@ class ProtocolConfig(BaseModel):
     system_prompt: Optional[str] = None
 
 
+# ===================================================================
+# Model Config - 消息层配置模型
+# ===================================================================
+
+class InnerConfig(BaseModel):
+    """配置文件内部信息"""
+    version: str = "1.0.0"
+
+
+class APIProviderConfig(BaseModel):
+    """API 服务提供商配置"""
+    name: str  # 服务商名称
+    base_url: str  # API 基础地址
+    client_type: str = "openai"  # 客户端类型: openai, gemini, maim
+    api_key: Optional[str] = None
+    max_retry: int = 2
+    timeout: int = 30
+    retry_interval: int = 10
+
+
+class ModelConfig(BaseModel):
+    """模型配置"""
+    model_identifier: str  # 模型标识符
+    name: str  # 模型名称
+    api_provider: str  # API 提供商名称
+    price_in: float = 0.0  # 输入价格
+    price_out: float = 0.0  # 输出价格
+    force_stream_mode: Optional[bool] = None  # 强制流式输出
+    extra_params: Optional[Dict[str, Any]] = None  # 额外参数
+
+
+class ModelTaskConfig(BaseModel):
+    """模型任务配置"""
+    model_list: list[str]  # 使用的模型列表
+    temperature: Optional[float] = 0.7  # 温度参数
+    max_tokens: Optional[int] = 800  # 最大 token 数
+
+
+class ModelTaskConfigGroup(BaseModel):
+    """模型任务配置组"""
+    chat: Optional[ModelTaskConfig] = None
+    image_recognition: Optional[ModelTaskConfig] = None
+    tool_use: Optional[ModelTaskConfig] = None
+    voice: Optional[ModelTaskConfig] = None
+    embedding: Optional[ModelTaskConfig] = None
+    expression: Optional[ModelTaskConfig] = None
+    emotion: Optional[ModelTaskConfig] = None
+    naming: Optional[ModelTaskConfig] = None
+    relation: Optional[ModelTaskConfig] = None
+    planner: Optional[ModelTaskConfig] = None
+
+
+class ModelConfigFile(BaseModel):
+    """消息层配置文件模型"""
+    inner: InnerConfig = Field(default_factory=lambda: InnerConfig(version="1.0.0"))
+    api_providers: list[APIProviderConfig] = Field(default_factory=list)
+    models: list[ModelConfig] = Field(default_factory=list)
+    model_task_config: Optional[ModelTaskConfigGroup] = None
+
+
+# ===================================================================
+# End of Model Config
+# ===================================================================
+
+
 class StateConfig(BaseModel):
     """状态配置模型"""
     locked: Optional[bool] = False
@@ -88,10 +153,10 @@ class Config(BaseModel):
     """主配置模型"""
     
     # 基础配置
-    url: Optional[str] = None
+    url: Optional[str] = None  # 已废弃，请使用 model_config.toml 中的协议配置
     Nickname: Optional[str] = None
     userNickname: Optional[str] = None
-    platform: str = "desktop-pet"
+    platform: str = "desktop-pet"  # 已废弃，请使用 model_config.toml 中的协议配置
     hide_console: bool = True
     Screenshot_shortcuts: Optional[str] = None
     allow_multiple_source_conversion: bool = False  # 多桌宠连接适配，默认为关
@@ -105,7 +170,7 @@ class Config(BaseModel):
     performance: Optional[PerformanceConfig] = None
     database: Optional[DatabaseConfig] = None
     state: Optional[StateConfig] = None
-    protocols: Optional[list[ProtocolConfig]] = None  # 协议配置列表
+    protocols: Optional[list[ProtocolConfig]] = None  # 协议配置列表（已废弃，请使用 model_config.toml）
     
     class Config:
         """Pydantic 配置"""

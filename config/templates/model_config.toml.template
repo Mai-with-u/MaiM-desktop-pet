@@ -1,0 +1,303 @@
+# ===================================================================
+# 麦麦桌面宠物 - 消息层配置文件模板
+# ===================================================================
+# 
+# 使用说明：
+# 1. 复制此文件为 model_config.toml
+# 2. 根据你的需求修改配置项
+# 3. 保存并运行程序
+#
+# 此配置文件专门用于消息层和协议层配置
+# ===================================================================
+
+[inner]
+# 配置文件版本号
+version = "1.0.0"
+
+# ----------------------------------------------------------------------
+# API 服务提供商配置
+# ----------------------------------------------------------------------
+# 可以配置多个 API 服务提供商
+# 每个 provider 可以是 OpenAI 兼容接口、Maim WebSocket 协议等
+
+# Maim 协议提供商（WebSocket 通信）
+[[api_providers]]
+name = "Maim-Local"           # 服务商名称（在 models 中引用）
+base_url = "ws://127.0.0.1:8000/ws"  # WebSocket 服务器地址
+client_type = "maim"          # 客户端类型：maim（WebSocket 协议）
+api_key = ""                  # Maim 协议可选的认证令牌
+max_retry = 2                 # 最大重试次数
+timeout = 30                  # 连接超时时间（秒）
+retry_interval = 5            # 重试间隔时间（秒）
+
+# OpenAI 兼容提供商示例（使用官方 API）
+[[api_providers]]
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
+client_type = "openai"
+api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # 请替换为实际的 API 密钥
+max_retry = 2
+timeout = 30
+retry_interval = 10
+
+# OpenAI 兼容提供商示例（使用第三方服务）
+[[api_providers]]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com/v1"
+client_type = "openai"
+api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # 请替换为实际的 API 密钥
+max_retry = 2
+timeout = 30
+retry_interval = 10
+
+# Google Gemini 提供商（特殊 API 格式）
+[[api_providers]]
+name = "Google"
+base_url = "https://api.google.com/v1"
+client_type = "gemini"        # 使用特殊的 gemini 客户端
+api_key = "your-google-api-key"
+max_retry = 2
+timeout = 30
+retry_interval = 10
+
+# 阿里百炼提供商示例
+[[api_providers]]
+name = "BaiLian"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+client_type = "openai"
+api_key = "your-bailian-key"
+max_retry = 2
+timeout = 15
+retry_interval = 5
+
+# SiliconFlow 提供商示例
+[[api_providers]]
+name = "SiliconFlow"
+base_url = "https://api.siliconflow.cn/v1"
+client_type = "openai"
+api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # 请替换为实际的 API 密钥
+max_retry = 2
+timeout = 30
+retry_interval = 10
+
+# ----------------------------------------------------------------------
+# 模型配置
+# ----------------------------------------------------------------------
+# 定义可用的模型列表，每个模型对应一个 api_provider
+
+# Maim 协议模型（WebSocket 连接）
+[[models]]
+model_identifier = "maim-default"  # Maim 协议使用默认标识
+name = "maim-local"                # 模型名称（在 task 配置中引用）
+api_provider = "Maim-Local"        # 使用的 API 提供商
+price_in = 0.0                     # 输入价格（Maim 协议无费用）
+price_out = 0.0                    # 输出价格
+
+# OpenAI GPT 模型示例
+[[models]]
+model_identifier = "gpt-4o-mini"
+name = "gpt-4o-mini"
+api_provider = "OpenAI"
+price_in = 0.15   # 单位：美元/M tokens
+price_out = 0.60
+
+[[models]]
+model_identifier = "gpt-4o"
+name = "gpt-4o"
+api_provider = "OpenAI"
+price_in = 2.50
+price_out = 10.00
+
+# DeepSeek 模型示例
+[[models]]
+model_identifier = "deepseek-chat"
+name = "deepseek-chat"
+api_provider = "DeepSeek"
+price_in = 0.0    # DeepSeek 价格以人民币计算，此处仅为示例
+price_out = 0.0
+
+[[models]]
+model_identifier = "deepseek-reasoner"
+name = "deepseek-reasoner"
+api_provider = "DeepSeek"
+price_in = 0.0
+price_out = 0.0
+# force_stream_mode = true   # 强制流式输出（如模型不支持非流式输出）
+
+# SiliconFlow 托管模型示例
+[[models]]
+model_identifier = "deepseek-ai/DeepSeek-V3"
+name = "siliconflow-deepseek-v3"
+api_provider = "SiliconFlow"
+price_in = 2.0
+price_out = 8.0
+
+[[models]]
+model_identifier = "deepseek-ai/DeepSeek-R1"
+name = "siliconflow-deepseek-r1"
+api_provider = "SiliconFlow"
+price_in = 4.0
+price_out = 16.0
+
+# Qwen 模型示例
+[[models]]
+model_identifier = "Qwen/Qwen3-8B"
+name = "qwen3-8b"
+api_provider = "SiliconFlow"
+price_in = 0
+price_out = 0
+[models.extra_params]  # 额外参数配置
+enable_thinking = false
+
+[[models]]
+model_identifier = "Qwen/Qwen3-30B-A3B-Instruct-2507"
+name = "qwen3-30b"
+api_provider = "SiliconFlow"
+price_in = 0.7
+price_out = 2.8
+
+# 视觉语言模型（VLM）示例
+[[models]]
+model_identifier = "Qwen/Qwen2.5-VL-72B-Instruct"
+name = "qwen2.5-vl-72b"
+api_provider = "SiliconFlow"
+price_in = 4.13
+price_out = 4.13
+
+# 语音识别模型示例
+[[models]]
+model_identifier = "FunAudioLLM/SenseVoiceSmall"
+name = "sensevoice-small"
+api_provider = "SiliconFlow"
+price_in = 0
+price_out = 0
+
+# 嵌入模型示例
+[[models]]
+model_identifier = "BAAI/bge-m3"
+name = "bge-m3"
+api_provider = "SiliconFlow"
+price_in = 0
+price_out = 0
+
+# ----------------------------------------------------------------------
+# 模型任务配置
+# ----------------------------------------------------------------------
+# 定义不同任务使用的模型，支持多模型列表（按优先级排序）
+# 如果第一个模型不可用，会自动切换到下一个模型
+
+# 对话任务 - 负责与用户的日常对话
+[model_task_config.chat]
+# 使用的模型列表（按优先级排序）
+model_list = ["maim-local", "deepseek-chat", "qwen3-30b"]
+temperature = 0.7      # 温度参数：控制输出的随机性（0.0-1.0，越高越随机）
+max_tokens = 800     # 最大输出 token 数
+
+# 识图任务 - 负责图片识别和描述
+[model_task_config.image_recognition]
+model_list = ["qwen2.5-vl-72b"]
+max_tokens = 800
+
+# 工具调用任务 - 需要支持工具调用的模型
+[model_task_config.tool_use]
+model_list = ["qwen3-30b", "gpt-4o"]
+temperature = 0.7
+max_tokens = 800
+
+# 语音识别任务 - 负责语音转文字
+[model_task_config.voice]
+model_list = ["sensevoice-small"]
+# temperature 和 max_tokens 对于语音识别通常不需要配置
+
+# 文本嵌入任务 - 用于向量化和语义搜索
+[model_task_config.embedding]
+model_list = ["bge-m3"]
+# embedding 通常不需要 temperature 和 max_tokens
+
+# 表达器和表达方式学习任务
+[model_task_config.expression]
+model_list = ["deepseek-chat", "qwen3-30b"]
+temperature = 0.5
+max_tokens = 800
+
+# 情绪分析任务
+[model_task_config.emotion]
+model_list = ["qwen3-8b", "deepseek-chat"]
+temperature = 0.3
+max_tokens = 500
+
+# 取名任务 - 为用户或联系人生成昵称
+[model_task_config.naming]
+model_list = ["qwen3-30b", "deepseek-chat"]
+temperature = 0.8
+max_tokens = 100
+
+# 关系提取任务 - 分析用户之间的关系
+[model_task_config.relation]
+model_list = ["qwen3-30b", "deepseek-chat"]
+temperature = 0.5
+max_tokens = 800
+
+# 决策任务 - 决定何时回复用户
+[model_task_config.planner]
+model_list = ["deepseek-chat", "qwen3-30b"]
+temperature = 0.3
+max_tokens = 800
+
+# ----------------------------------------------------------------------
+# 注意事项
+# ----------------------------------------------------------------------
+# 
+# 1. API 密钥安全：
+#     - 请将 API 密钥替换为实际的密钥
+#     - 不要将包含真实 API 密钥的 model_config.toml 提交到版本控制
+#     - model_config.toml 已添加到 .gitignore 中
+#
+# 2. Maim 协议：
+#     - Maim 协议使用 WebSocket 长连接
+#     - 适用于连接本地或远程的 Maim 后端服务
+#     - 支持实时双向通信
+#     - client_type 必须设置为 "maim"
+#
+# 3. OpenAI 兼容协议：
+#     - 大多数 AI 服务商都提供 OpenAI 兼容的 API
+#     - 设置 client_type = "openai" 即可
+#     - 支持流式输出和非流式输出
+#
+# 4. Gemini 协议：
+#     - Google 的 Gemini API 格式与 OpenAI 不完全兼容
+#     - 需要设置 client_type = "gemini"
+#
+# 5. 模型选择建议：
+#     - chat 任务：建议使用支持长对话的模型（如 GPT-4o、DeepSeek）
+#     - image_recognition 任务：必须使用支持视觉的模型（如 Qwen-VL）
+#     - tool_use 任务：建议使用支持函数调用的模型
+#     - voice 任务：使用专门的语音识别模型
+#     - embedding 任务：使用专门的嵌入模型（如 BGE）
+#
+# 6. 多模型配置：
+#     - 每个 task 可以配置多个模型
+#     - 按优先级排序，第一个不可用时会自动切换
+#     - 建议配置不同服务商的模型，避免单点故障
+#
+# 7. 成本控制：
+#     - price_in 和 price_out 用于统计 API 调用成本
+#     - 可以根据价格调整模型优先级
+#     - 便宜的模型可以作为备份
+#
+# 8. 性能优化：
+#     - 小模型（如 8B）适合快速响应的任务
+#     - 大模型（如 72B）适合复杂推理任务
+#     - 根据任务需求选择合适的模型
+#
+# 9. 测试建议：
+#     - 首次配置后，建议先测试 chat 任务
+#     - 确认所有配置的模型都可以正常连接
+#     - 查看日志文件了解详细错误信息
+#
+# 10. 协议切换：
+#     - 可以在运行时动态切换协议
+#     - 使用 src/core/protocol_manager 进行管理
+#     - 详见 src/core/protocols/README.md
+#
+# ----------------------------------------------------------------------

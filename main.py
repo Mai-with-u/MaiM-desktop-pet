@@ -39,10 +39,28 @@ async def initialize_database():
     except Exception as e:
         logger.error(f"数据库初始化出错: {e}")
 
+
+async def initialize_chat_manager():
+    """初始化聊天管理器"""
+    from src.util.logger import logger
+    from src.core.chat_manager import chat_manager
+    
+    try:
+        success = await chat_manager.initialize()
+        if success:
+            logger.info(f"聊天管理器初始化成功，协议类型: {chat_manager.get_protocol_type()}")
+        else:
+            logger.error("聊天管理器初始化失败")
+    except Exception as e:
+        logger.error(f"聊天管理器初始化出错: {e}", exc_info=True)
+
 if __name__ == "__main__":
     try:
         # 初始化数据库（异步）
         asyncio.run(initialize_database())
+        
+        # 初始化聊天管理器（异步）
+        asyncio.run(initialize_chat_manager())
         
         # 各个模块向线程管理器注册自己的线程
         print("正在注册后台服务...")

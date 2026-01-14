@@ -7,6 +7,11 @@
 - 配置验证
 - 配置模板
 - 配置更新 API
+- **消息层配置分离**（新增）
+
+配置系统现在分为两个独立的配置文件：
+1. **config.toml** - 主配置文件（桌面宠物核心配置）
+2. **model_config.toml** - 消息层配置文件（协议、模型、任务配置）
 
 ## 目录结构
 
@@ -16,13 +21,14 @@ config/
 ├── schema.py             # 配置模式定义（使用 Pydantic）
 ├── loader.py             # 配置加载器
 ├── templates/            # 配置模板
-│   └── config.toml.template  # 配置文件模板
+│   ├── config.toml.template      # 主配置文件模板
+│   └── model_config.toml.template  # 消息层配置文件模板（新增）
 └── README.md             # 本文档
 ```
 
 ## 使用方法
 
-### 基本使用
+### 主配置文件（config.toml）
 
 ```python
 from config import load_config, Config
@@ -33,7 +39,27 @@ config = load_config()
 # 访问配置
 print(config.url)
 print(config.Nickname)
-print(config.live2d['enabled'])
+print(config.live2d.enabled)
+```
+
+### 消息层配置文件（model_config.toml）
+
+```python
+from config import load_model_config, ModelConfigFile
+
+# 加载消息层配置（会自动确保配置文件存在）
+model_config = load_model_config()
+
+# 访问配置
+print(f"版本: {model_config.inner.version}")
+print(f"API 提供商数量: {len(model_config.api_providers)}")
+print(f"模型数量: {len(model_config.models)}")
+
+# 访问任务配置
+chat_config = model_config.model_task_config.chat
+if chat_config:
+    print(f"对话任务模型: {chat_config.model_list}")
+    print(f"温度: {chat_config.temperature}")
 ```
 
 ### 获取界面缩放倍率
@@ -57,18 +83,53 @@ update_config_value(None, 'hide_console', True)
 
 ## 配置文件自动创建
 
+配置系统使用统一的自动创建机制，所有配置文件的检查和创建都通过内部的 `_ensure_config_file_exists()` 函数处理。
+
+### 主配置文件自动创建
+
 程序首次运行时，如果没有 `config.toml` 文件，会自动：
 1. 从 `config/templates/config.toml.template` 复制配置模板
 2. 创建 `config.toml` 文件
 3. 显示提示信息
 4. 暂停程序，等待用户修改配置
 
+### 消息层配置文件自动创建
+
+程序首次运行时，如果没有 `model_config.toml` 文件，会自动：
+1. 从 `config/templates/model_config.toml.template` 复制配置模板
+2. 创建 `model_config.toml` 文件
+3. 显示提示信息
+4. 暂停程序，等待用户修改配置
+
+### 自动创建机制
+
+配置文件自动创建通过以下函数实现：
+- `ensure_config_exists()` - 确保主配置文件存在
+- `ensure_model_config_exists()` - 确保消息层配置文件存在
+- `_ensure_config_file_exists()` - 内部通用函数（合并实现）
+
+这种设计使得添加新的配置文件类型变得简单，只需调用 `_ensure_config_file_exists()` 并传入相应的参数即可。
+
 ## 配置模板
+
+### 主配置模板
 
 配置模板包含详细的注释说明所有配置项的含义和用法。模板文件位置：
 ```
 config/templates/config.toml.template
 ```
+
+### 消息层配置模板（新增）
+
+消息层配置模板专门用于协议和模型配置。模板文件位置：
+```
+config/templates/model_config.toml.template
+```
+
+该配置文件包含三个主要部分：
+1. **api_providers** - API 服务提供商配置（Maim、OpenAI、DeepSeek 等）
+2. **models** - 模型配置（可用的模型列表）
+3. **model_task_config** - 任务配置（不同任务使用的模型）
 
 ## 配置验证
 

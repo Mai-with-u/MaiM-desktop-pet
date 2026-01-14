@@ -1,5 +1,5 @@
 """
-聊天模块 - 处理消息发送和创建
+Maim 聊天实现 - 专为 Maim 协议设计的聊天功能
 
 支持的消息类型：
 - text: 纯文本消息
@@ -16,22 +16,21 @@ import uuid
 from config import load_config
 from src.core.protocol_manager import protocol_manager
 from src.util.image_util import pixmap_to_base64
-
-# 加载配置
-config = load_config()
+from src.core.chats.interfaces import IChat
 from src.util.logger import logger
 from src.database import db_manager
 
+# 加载配置
+config = load_config()
 
-class Chat:
-    """聊天工具类 - 负责创建和发送消息"""
+
+class MaimChat(IChat):
+    """Maim 聊天实现 - 专为 Maim 协议设计"""
     
     def __init__(self):
-        """初始化聊天工具"""
+        """初始化 Maim 聊天"""
         self.format_info = FormatInfo(
-            # 消息内容中包含的Seg的type列表
             content_format=["text", "image", "emoji"],
-            # 消息发出后，期望最终的消息中包含的消息类型
             accept_format=["text", "image", "emoji"],
         )
         self.default_user_id = "0"
@@ -162,9 +161,6 @@ class Chat:
         
         返回:
             bool: 是否发送成功
-        
-        异常:
-            会捕获并记录异常，返回 False
         """
         try:
             # 验证输入
@@ -215,96 +211,45 @@ class Chat:
             logger.error(f"消息发送失败 - 错误: {e}", exc_info=True)
             return False
     
-    async def easy_to_send(
-        self,
-        text: str,
-        msg_type: str = "text"
-    ) -> bool:
-        """简化版消息发送（保持向后兼容）
+    async def send_text(self, text: str, additional_config: Optional[dict] = None) -> bool:
+        """
+        发送文本消息
         
         参数:
-            text: 消息内容
-            msg_type: 消息类型
+            text: 消息文本
+            additional_config: 附加配置（如回复概率增益等）
         
         返回:
             bool: 是否发送成功
         """
-        return await self.send(text=text, msg_type=msg_type)
-    
-    async def send_text(self, text: str) -> bool:
-        """发送文本消息
-        
-        参数:
-            text: 文本内容
-        
-        返回:
-            bool: 是否发送成功
-        """
-        return await self.send(text=text, msg_type="text")
+        return await self.send(text=text, msg_type="text", additional_config=additional_config)
     
     async def send_image(self, image_data: str) -> bool:
-        """发送图片消息
-        
-        参数:
-            image_data: 图片数据（URL或base64等）
-        
-        返回:
-            bool: 是否发送成功
-        """
+        """发送图片消息"""
         return await self.send(text=image_data, msg_type="image")
     
     async def send_emoji(self, emoji: str) -> bool:
-        """发送表情消息
-        
-        参数:
-            emoji: 表情内容（base64编码）
-        
-        返回:
-            bool: 是否发送成功
-        """
+        """发送表情消息"""
         return await self.send(text=emoji, msg_type="emoji")
     
     def _create_seglist_segment(
         self,
         segments: List[Union[Seg, tuple]]
     ) -> Seg:
-        """创建 seglist 类型的消息片段
-        
-        参数:
-            segments: Seg 对象列表，或 (type, data) 元组列表
-        
-        返回:
-            Seg: seglist 类型的消息片段
-        
-        示例:
-            >>> # 使用 Seg 对象
-            >>> seg1 = Seg("text", "你好")
-            >>> seg2 = Seg("image", "base64...")
-            >>> seglist = self._create_seglist_segment([seg1, seg2])
-            >>> 
-            >>> # 使用元组
-            >>> seglist = self._create_seglist_segment([
-            ...     ("text", "你好"),
-            ...     ("image", "base64..."),
-            ... ])
-        """
+        """创建 seglist 类型的消息片段"""
         seg_list = []
         
         for seg in segments:
             if isinstance(seg, Seg):
-                # 已经是 Seg 对象，直接使用
                 seg_list.append(seg)
             elif isinstance(seg, tuple) and len(seg) == 2:
-                # 元组形式，创建 Seg 对象
                 seg_type, seg_data = seg
                 
                 # 确保 seg_data 是字符串类型
                 if isinstance(seg_data, dict):
-                    # 如果是字典，转换为字符串
                     import json
                     seg_data = json.dumps(seg_data, ensure_ascii=False)
                 elif not isinstance(seg_data, str):
-                    # 其他非字符串类型，转换为字符串
                     seg_data = str(seg_data)
                 
                 seg_list.append(Seg(type=seg_type, data=seg_data))
@@ -321,31 +266,7 @@ class Chat:
         user_cardname: Optional[str] = None,
         additional_config: Optional[dict] = None
     ) -> bool:
-        """发送复合消息（seglist）
-        
-        参数:
-            segments: Seg 对象列表或 (type, data) 元组列表
-            user_id: 用户ID
-            user_nickname: 用户昵称
-            user_cardname: 用户群名片
-            additional_config: 附加配置
-        
-        返回:
-            bool: 是否发送成功
-        
-        示例:
-            >>> # 发送文本+图片
-            >>> await chat_util.send_seglist([
-            ...     ("text", "这是一张图片："),
-            ...     ("image", "base64..."),
-            ... ])
-            >>> 
-            >>> # 发送表情+文本
-            >>> await chat_util.send_seglist([
-            ...     ("emoji", "base64..."),
-            ...     ("text", "哈哈"),
-            ... ])
-        """
+        """发送复合消息"""
         try:
             # 创建 seglist 段
             seglist = self._create_seglist_segment(segments)
@@ -399,19 +320,7 @@ class Chat:
         user_cardname: Optional[str] = None,
         additional_config: Optional[dict] = None
     ) -> bool:
-        """发送文本+图片的复合消息（便捷方法）
-        
-        参数:
-            text: 文本内容
-            image_data: 图片数据（base64编码，无头部）
-            user_id: 用户ID
-            user_nickname: 用户昵称
-            user_cardname: 用户群名片
-            additional_config: 附加配置
-        
-        返回:
-            bool: 是否发送成功
-        """
+        """发送文本+图片的复合消息"""
         return await self.send_seglist([
             ("text", text),
             ("image", image_data),
@@ -426,40 +335,36 @@ class Chat:
         user_cardname: Optional[str] = None,
         additional_config: Optional[dict] = None
     ) -> bool:
-        """发送 QPixmap 图片（带可选文本）
-        
-        参数:
-            pixmap: PyQt5.QtGui.QPixmap 对象
-            text: 可选的文本说明
-            user_id: 用户ID
-            user_nickname: 用户昵称
-            user_cardname: 用户群名片
-            additional_config: 附加配置
-        
-        返回:
-            bool: 是否发送成功
-        """
+        """发送 QPixmap 图片（带可选文本）"""
         try:
             # 将 QPixmap 转换为 base64（无头部）
             image_base64 = pixmap_to_base64(pixmap, add_header=False)
             
             if text:
-                # 发送文本+图片
                 return await self.send_text_and_image(
                     text, image_base64, user_id, user_nickname, user_cardname, additional_config
                 )
             else:
-                # 只发送图片
                 return await self.send_image(image_base64)
                 
         except Exception as e:
             logger.error(f"发送 QPixmap 失败 - 错误: {e}", exc_info=True)
             return False
+    
+    def get_name(self) -> str:
+        """获取聊天实现名称"""
+        return "Maim"
+    
+    def is_supported_message_type(self, msg_type: str) -> bool:
+        """检查是否支持指定的消息类型"""
+        return msg_type in ["text", "image", "emoji", "seglist"]
+    
+    def get_supported_message_types(self) -> List[str]:
+        """获取支持的消息类型列表"""
+        return ["text", "image", "emoji", "seglist"]
 
 
-# 创建全局实例
-chat_util = Chat()
-
-
-# 向后兼容的别名
-chat = Chat()
+# 创建全局实例（向后兼容）
+maim_chat_util = MaimChat()
+chat_util = maim_chat_util  # 别名，保持向后兼容
+chat = maim_chat_util  # 别名，保持向后兼容

@@ -38,6 +38,31 @@
 
 ### 1. 配置协议
 
+#### 方式一：使用 model_config.toml（推荐）
+
+在 `model_config.toml` 中配置协议：
+
+```toml
+[[api_providers]]
+name = "Maim 后端"
+provider_type = "maim"
+url = "ws://127.0.0.1:8000/ws"
+platform = "desktop-pet"
+api_key = ""  # 可选的认证令牌
+
+[[api_providers]]
+name = "OpenAI API"
+provider_type = "openai"
+url = "https://api.openai.com/v1"
+api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+[api_providers.extra_params]
+model = "gpt-3.5-turbo"
+system_prompt = "你是一个友好的桌面宠物助手"
+```
+
+#### 方式二：使用 config.toml（向后兼容）
+
 在 `config.toml` 中配置协议：
 
 ```toml
@@ -59,15 +84,45 @@ system_prompt = "你是一个友好的桌面宠物助手"
 
 ### 2. 初始化协议管理器
 
+#### 方式一：从 model_config.toml 初始化（推荐）
+
 ```python
 from src.core.protocol_manager import protocol_manager
 import asyncio
 
 async def main():
-    # 从配置加载协议列表
-    from config import config
+    # 从 model_config.toml 自动加载协议配置
+    await protocol_manager.initialize_from_model_config()
     
-    # 初始化协议管理器
+    # 注册消息处理器
+    async def message_handler(message):
+        print(f"收到消息: {message}")
+    
+    protocol_manager.register_message_handler(message_handler)
+    
+    # 发送消息
+    await protocol_manager.send_message({
+        'message_segment': {
+            'type': 'text',
+            'data': '你好，麦麦！'
+        }
+    })
+    
+    # 切换协议
+    await protocol_manager.switch_protocol('OpenAI')
+
+asyncio.run(main())
+```
+
+#### 方式二：从 config.toml 初始化（向后兼容）
+
+```python
+from src.core.protocol_manager import protocol_manager
+from config import config
+import asyncio
+
+async def main():
+    # 从 config.toml 加载协议列表
     await protocol_manager.initialize(config.protocols)
     
     # 注册消息处理器
@@ -296,7 +351,78 @@ OpenAI 协议会自动处理消息格式：
 
 ## 配置说明
 
-### Maim 协议配置
+### 方式一：使用 model_config.toml（推荐）
+
+#### Maim 协议配置
+
+```toml
+[[api_providers]]
+name = "Maim 后端"
+provider_type = "maim"
+url = "ws://127.0.0.1:8000/ws"
+platform = "desktop-pet"
+api_key = ""  # 可选的认证令牌
+```
+
+**参数说明：**
+- `name`: 提供商名称
+- `provider_type`: 必须为 "maim"
+- `url`: WebSocket 服务器地址
+- `platform`: 平台标识
+- `api_key`: 可选的认证令牌
+
+#### OpenAI 协议配置
+
+```toml
+[[api_providers]]
+name = "OpenAI API"
+provider_type = "openai"
+url = "https://api.openai.com/v1"
+api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+[api_providers.extra_params]
+model = "gpt-3.5-turbo"
+system_prompt = "你是一个友好的桌面宠物助手"
+```
+
+**参数说明：**
+- `name`: 提供商名称
+- `provider_type`: 必须为 "openai"
+- `url`: API 基础地址
+- `api_key`: OpenAI API 密钥（必填）
+- `extra_params`: 额外参数
+  - `model`: 模型名称
+  - `system_prompt`: 系统提示词
+
+#### 多协议配置
+
+可以同时配置多个协议：
+
+```toml
+[[api_providers]]
+name = "Maim 后端"
+provider_type = "maim"
+url = "ws://127.0.0.1:8000/ws"
+platform = "desktop-pet"
+
+[[api_providers]]
+name = "OpenAI API"
+provider_type = "openai"
+url = "https://api.openai.com/v1"
+api_key = "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+[[api_providers]]
+name = "DeepSeek API"
+provider_type = "deepseek"
+url = "https://api.deepseek.com/v1"
+api_key = "sk-deepseek-xxx"
+```
+
+程序启动时会自动使用第一个配置的协议作为默认协议。
+
+### 方式二：使用 config.toml（向后兼容）
+
+#### Maim 协议配置
 
 ```toml
 [[protocols]]
@@ -312,7 +438,7 @@ token = "optional_token"
 - `platform`: 平台标识
 - `token`: 可选的认证令牌
 
-### OpenAI 协议配置
+#### OpenAI 协议配置
 
 ```toml
 [[protocols]]
@@ -330,7 +456,7 @@ system_prompt = "你是一个友好的桌面宠物助手"
 - `model`: 模型名称（可选，默认 gpt-3.5-turbo）
 - `system_prompt`: 系统提示词（可选）
 
-### 多协议配置
+#### 多协议配置
 
 可以同时配置多个协议：
 
@@ -458,6 +584,46 @@ class ChatManager:
     async def cleanup(self):
         """清理资源"""
         await self.protocol_manager.cleanup()
+```
+
+### 使用模型配置加载器
+
+`config/protocol_config_loader.py` 提供了额外的工具函数：
+
+```python
+from config import (
+    load_model_config,
+    load_protocol_configs,
+    get_model_config_by_task,
+    get_models_by_provider,
+    get_model_config,
+    validate_protocol_configs
+)
+
+# 加载模型配置
+model_config = load_model_config()
+
+# 转换为协议配置
+protocol_configs = load_protocol_configs(model_config)
+
+# 验证协议配置
+if validate_protocol_configs(protocol_configs):
+    print("配置验证通过")
+
+# 根据任务获取模型配置
+chat_config = get_model_config_by_task(model_config, 'chat')
+if chat_config:
+    print(f"对话任务模型: {chat_config.get('model_list')}")
+
+# 获取指定提供商的所有模型
+openai_models = get_models_by_provider(model_config, 'openai')
+for model in openai_models:
+    print(f"模型: {model.get('id')} - {model.get('name')}")
+
+# 根据 ID 获取模型配置
+model_config_obj = get_model_config(model_config, 'gpt-3.5-turbo')
+if model_config_obj:
+    print(f"模型详情: {model_config_obj}")
 ```
 
 ## 常见问题

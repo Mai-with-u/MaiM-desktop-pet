@@ -10,6 +10,19 @@ from src.core.protocols.protocol_factory import ProtocolFactory
 from src.util.logger import logger
 
 
+# 导入协议配置加载器（可选，用于从 model_config.toml 加载配置）
+try:
+    from config import (
+        load_model_config,
+        load_protocol_configs,
+        validate_protocol_configs
+    )
+    _HAS_MODEL_CONFIG = True
+except ImportError:
+    _HAS_MODEL_CONFIG = False
+    logger.warning("无法导入模型配置加载器，将使用旧的配置方式")
+
+
 class ProtocolManager:
     """协议管理器 - 单例模式"""
     
@@ -50,7 +63,21 @@ class ProtocolManager:
                 protocol_config = ProtocolConfig.from_dict(config_dict)
                 protocol = ProtocolFactory.create_protocol(protocol_config)
                 
-                protocol_name = protocol.get_name()
+                # 为每个协议配置生成唯一的名称
+                # 对于 OpenAI 协议，使用提供商名称作为区分
+                protocol_type = config_dict.get('type', '').lower()
+                if protocol_type == 'openai':
+                    # 使用 base_url 作为唯一标识
+                    base_url = config_dict.get('base_url', 'default')
+                    protocol_name = f"OpenAI-{base_url}"
+                elif protocol_type == 'maim':
+                    # 使用 platform 作为唯一标识
+                    platform = config_dict.get('platform', 'default')
+                    protocol_name = f"Maim-{platform}"
+                else:
+                    # 其他协议类型
+                    protocol_name = protocol.get_name()
+                
                 self._protocols[protocol_name] = protocol
                 
                 # 初始化协议
@@ -70,11 +97,56 @@ class ProtocolManager:
         
         # 默认激活第一个协议
         if self._protocols:
-            first_protocol = list(self._protocols.values())[0]
-            await self.set_active_protocol(first_protocol.get_name())
+            first_protocol_name = list(self._protocols.keys())[0]
+            await self.set_active_protocol(first_protocol_name)
         
         self._is_initialized = True
         logger.info(f"协议管理器初始化完成，共 {len(self._protocols)} 个协议")
+    
+    async def initialize_from_model_config(self):
+        """
+        从 model_config.toml 初始化协议管理器（新方法）
+        
+        这个方法会自动加载 model_config.toml 文件，并从中提取协议配置
+        
+        注意：即使部分协议加载失败，也不会阻止初始化完成
+        对于无状态协议（如 OpenAI），连接失败也不应该阻止初始化
+        """
+        if not _HAS_MODEL_CONFIG:
+            raise ImportError(
+                "无法从 model_config.toml 初始化：缺少配置加载器模块。"
+                "请使用 initialize() 方法代替。"
+            )
+        
+        if self._is_initialized:
+            logger.warning("协议管理器已经初始化，跳过")
+            return
+        
+        logger.info("从 model_config.toml 初始化协议管理器...")
+        
+        try:
+            # 加载模型配置
+            model_config = load_model_config()
+            
+            # 转换为协议配置
+            protocol_configs = load_protocol_configs(model_config)
+            
+            # 检查协议配置列表
+            if not protocol_configs:
+                logger.error("协议配置列表为空，请检查 model_config.toml 配置")
+                # 不抛出异常，允许系统继续运行（可能使用旧配置）
+                return
+            
+            # 验证协议配置（但不强制要求验证通过）
+            if not validate_protocol_configs(protocol_configs):
+                logger.warning("协议配置验证未通过，部分协议可能无法正常工作")
+            
+            # 使用协议配置初始化
+            await self.initialize(protocol_configs)
+            
+        except Exception as e:
+            logger.error(f"从 model_config.toml 初始化失败: {e}", exc_info=True)
+            # 不抛出异常，允许系统继续运行
     
     async def set_active_protocol(self, protocol_name: str) -> bool:
         """
@@ -103,9 +175,14 @@ class ProtocolManager:
         if connect_success:
             logger.info(f"当前激活协议: {protocol_name}")
         else:
-            logger.error(f"连接协议失败: {protocol_name}")
+            # 对于无状态协议（如 OpenAI），连接失败不应该阻止初始化
+            # 只记录警告，不返回 False
+            logger.warning(f"协议连接失败（但协议仍可用）: {protocol_name}")
+            logger.warning(f"该协议将在首次发送消息时尝试重新连接")
         
-        return connect_success
+        # 始终返回 True，因为协议已经设置为激活状态
+        # 连接状态会在实际使用时检查
+        return True
     
     async def send_message(self, message: Dict[str, Any]) -> bool:
         """
