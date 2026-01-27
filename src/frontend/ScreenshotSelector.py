@@ -42,6 +42,9 @@ class ScreenshotSelector(QWidget):
         self.option_panel.confirm.clicked.connect(self._confirm_screenshot)
         self.option_panel.cancel.clicked.connect(self._cancel_screenshot)
         self.option_panel.resel.clicked.connect(self._resel_selection)
+        # 连接新功能按钮信号
+        self.option_panel.ocr_triggered.connect(self._on_ocr_triggered)
+        self.option_panel.translate_triggered.connect(self._on_translate_triggered)
         
         logger.info("截图选择器初始化完成")
         
@@ -105,7 +108,7 @@ class ScreenshotSelector(QWidget):
             
         # 选项栏面板位置：选区右下角下方
         panel_width = 350
-        panel_height = 90
+        panel_height = 130  # 更新为新的高度
         margin = 10
         
         x = self.selection_rect.right() - panel_width
@@ -388,19 +391,37 @@ class ScreenshotSelector(QWidget):
         """
         raise NotImplementedError
     
-    def on_screenshot_canceled(self):
-        """子类需重写此方法处理取消截图"""
+    def _on_ocr_triggered(self):
+        """OCR识别触发（占位方法）
+        
+        子类可重写此方法实现具体的OCR识别功能
+        """
+        logger.info("OCR识别功能触发（占位实现）")
+        # TODO: 实现OCR识别功能
+        pass
+    
+    def _on_translate_triggered(self):
+        """翻译功能触发（占位方法）
+        
+        子类可重写此方法实现具体的翻译功能
+        """
+        logger.info("翻译功能触发（占位实现）")
+        # TODO: 实现翻译功能
         pass
 
 
 class OptionPanel(QWidget):
     """截图选项面板"""
     
+    # 定义信号
+    ocr_triggered = pyqtSignal()  # OCR识别信号
+    translate_triggered = pyqtSignal()  # 翻译信号
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setFixedSize(350, 90)
+        self.setFixedSize(350, 130)  # 增加高度以容纳新按钮
         
         # 创建界面
         self._init_ui()
@@ -508,12 +529,71 @@ class OptionPanel(QWidget):
         self.resel.setCursor(Qt.PointingHandCursor)
         self.resel.setToolTip("重新选择 (Delete)")
         
-        # 添加到按钮布局
+        # 添加到第一行按钮布局
         button_layout.addWidget(self.confirm)
         button_layout.addWidget(self.cancel)
         button_layout.addWidget(self.resel)
         
         main_layout.addLayout(button_layout)
+        
+        # 第二行按钮容器（识别文字、翻译）
+        feature_button_layout = QHBoxLayout()
+        feature_button_layout.setContentsMargins(10, 0, 10, 8)
+        feature_button_layout.setSpacing(8)
+        
+        # 识别文字按钮
+        self.ocr_btn = QPushButton("识别文字")
+        self.ocr_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #6610f2;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #550dc6;
+            }
+            QPushButton:pressed {
+                background-color: #4508b5;
+            }
+        """)
+        self.ocr_btn.setCursor(Qt.PointingHandCursor)
+        self.ocr_btn.setToolTip("识别截图中的文字")
+        
+        # 翻译按钮
+        self.translate_btn = QPushButton("翻译")
+        self.translate_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #fd7e14;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #e06c00;
+            }
+            QPushButton:pressed {
+                background-color: #c25d00;
+            }
+        """)
+        self.translate_btn.setCursor(Qt.PointingHandCursor)
+        self.translate_btn.setToolTip("翻译截图中的文字")
+        
+        # 添加到第二行按钮布局
+        feature_button_layout.addWidget(self.ocr_btn)
+        feature_button_layout.addWidget(self.translate_btn)
+        
+        # 连接按钮点击事件到信号
+        self.ocr_btn.clicked.connect(self.ocr_triggered.emit)
+        self.translate_btn.clicked.connect(self.translate_triggered.emit)
+        
+        main_layout.addLayout(feature_button_layout)
         self.setLayout(main_layout)
     
     def get_text(self) -> str:

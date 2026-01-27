@@ -345,6 +345,156 @@ class ChatManager:
             return []
         return self._chat.get_history()
     
+    async def send_by_task(
+        self,
+        task_type: str,
+        text: str = None,
+        image_data: str = None,
+        **kwargs
+    ) -> bool:
+        """
+        根据任务类型发送消息
+        
+        Args:
+            task_type: 任务类型（'chat', 'image_recognition', 'expression' 等）
+            text: 文本内容
+            image_data: 图片数据（base64）
+            **kwargs: 其他参数（如 user_id, user_nickname 等）
+        
+        Returns:
+            是否发送成功
+        """
+        try:
+            # 1. 获取任务配置
+            from config.model_config_loader import (
+                get_task_config,
+                get_model_config,
+                get_provider_config
+            )
+            
+            task_config = get_task_config(task_type)
+            if not task_config or not task_config.model_list:
+                logger.error(f"任务配置未找到或模型列表为空: {task_type}")
+                return False
+            
+            # 2. 获取第一个可用模型
+            model_name = task_config.model_list[0]  # 这是 name 字段
+            model_config = get_model_config(model_name)
+            if not model_config:
+                logger.error(f"模型配置未找到: {model_name}")
+                return False
+            
+            # 使用 model_identifier 作为 API 调用的模型名称
+            api_model_name = model_config.model_identifier
+            logger.info(f"任务 {task_type} 使用模型: name={model_name}, model_identifier={api_model_name}")
+            
+            # 3. 获取提供商配置
+            provider_config = get_provider_config(model_config.api_provider)
+            if not provider_config:
+                logger.error(f"提供商配置未找到: {model_config.api_provider}")
+                return False
+            
+            # 4. 确定协议类型
+            protocol_type = provider_config.client_type.lower()
+            
+            # 5. 创建或获取协议实例
+            if protocol_type == 'openai':
+                protocol_name = f"OpenAI-{provider_config.base_url}"
+                protocol = protocol_manager.get_protocol(protocol_name)
+                
+                if not protocol:
+                    # 创建临时协议实例
+                    from src.core.protocols.openai_protocol import OpenAIProtocol
+                    protocol = OpenAIProtocol()
+                    
+                    # 构建初始化配置（使用 model_identifier）
+                    init_config = {
+                        'type': 'openai',
+                        'api_key': provider_config.api_key,
+                        'base_url': provider_config.base_url,
+                        'model': api_model_name
+                    }
+                    
+                    # 添加任务配置中的参数
+                    if task_config.temperature is not None:
+                        init_config['temperature'] = task_config.temperature
+                    if task_config.max_tokens is not None:
+                        init_config['max_tokens'] = task_config.max_tokens
+                    
+                    await protocol.initialize(init_config)
+                else:
+                    # 如果协议已存在，更新模型配置（使用 model_identifier）
+                    from src.core.protocols.openai_protocol import OpenAIProtocol
+                    if isinstance(protocol, OpenAIProtocol):
+                        init_config = {
+                            'type': 'openai',
+                            'api_key': provider_config.api_key,
+                            'base_url': provider_config.base_url,
+                            'model': api_model_name
+                        }
+                        
+                        if task_config.temperature is not None:
+                            init_config['temperature'] = task_config.temperature
+                        if task_config.max_tokens is not None:
+                            init_config['max_tokens'] = task_config.max_tokens
+                        
+                        await protocol.initialize(init_config)
+                
+            elif protocol_type == 'maim':
+                protocol_name = f"Maim-{provider_config.name}"
+                protocol = protocol_manager.get_protocol(protocol_name)
+            else:
+                logger.error(f"不支持的协议类型: {protocol_type}")
+                return False
+            
+            # 6. 发送消息
+            if not protocol:
+                logger.error("协议实例为空")
+                return False
+            
+            # 构建消息
+            if text and image_data:
+                message = {
+                    'message_segment': {
+                        'type': 'seglist',
+                        'data': [
+                            {'type': 'text', 'data': text},
+                            {'type': 'image', 'data': image_data}
+                        ]
+                    }
+                }
+            elif text:
+                message = {
+                    'message_segment': {
+                        'type': 'text',
+                        'data': text
+                    }
+                }
+            elif image_data:
+                message = {
+                    'message_segment': {
+                        'type': 'image',
+                        'data': image_data
+                    }
+                }
+            else:
+                logger.error("text 和 image_data 至少需要提供一个")
+                return False
+            
+            # 发送消息
+            success = await protocol.send_message(message)
+            
+            if success:
+                logger.info(f"任务 {task_type} 消息发送成功，使用模型: {model_name}")
+            else:
+                logger.error(f"任务 {task_type} 消息发送失败")
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"发送任务消息失败: {e}", exc_info=True)
+            return False
+    
     def print_status(self):
         """打印当前状态"""
         print("\n" + "=" * 60)

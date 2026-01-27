@@ -628,6 +628,84 @@ class PetScreenshotSelector(ScreenshotSelector):
         for chat_bubble in self.pet.chat_bubbles._active_bubbles:
             chat_bubble.show()
     
+    def _on_ocr_triggered(self):
+        """OCR识别功能实现"""
+        try:
+            # 获取选区截图
+            screen = QApplication.primaryScreen()
+            full_pixmap = screen.grabWindow(0)
+            selected_pixmap = full_pixmap.copy(self.selection_rect)
+            
+            # 转换为 base64
+            image_base64 = pixmap_to_base64(selected_pixmap)
+            
+            logger.info("OCR识别功能触发，发送请求到LLM")
+            
+            # 先关闭截图窗口，恢复界面
+            self.pet.screenshot_manager.is_screenshotting = False
+            self.pet.show()
+            for chat_bubble in self.pet.chat_bubbles._active_bubbles:
+                chat_bubble.show()
+            self.close()
+            logger.info("截图窗口已关闭")
+            
+            # 显示"正在识别"提示
+            self.pet.show_message("正在识别文字...", msg_type="received")
+            
+            # 构建 OCR prompt
+            ocr_prompt = """请识别图片中的文字内容，只输出识别到的文字，不要添加任何解释或说明。"""
+            
+            # 使用 image_recognition 任务发送请求
+            import asyncio
+            asyncio.run(chat_manager.send_by_task(
+                task_type='image_recognition',
+                text=ocr_prompt,
+                image_data=image_base64
+            ))
+            
+        except Exception as e:
+            logger.error(f"OCR识别失败: {e}", exc_info=True)
+            self.pet.show_message("OCR识别失败，请重试", msg_type="received")
+    
+    def _on_translate_triggered(self):
+        """翻译功能实现"""
+        try:
+            # 获取选区截图
+            screen = QApplication.primaryScreen()
+            full_pixmap = screen.grabWindow(0)
+            selected_pixmap = full_pixmap.copy(self.selection_rect)
+            
+            # 转换为 base64
+            image_base64 = pixmap_to_base64(selected_pixmap)
+            
+            logger.info("翻译功能触发，发送请求到LLM")
+            
+            # 先关闭截图窗口，恢复界面
+            self.pet.screenshot_manager.is_screenshotting = False
+            self.pet.show()
+            for chat_bubble in self.pet.chat_bubbles._active_bubbles:
+                chat_bubble.show()
+            self.close()
+            logger.info("截图窗口已关闭")
+            
+            # 显示"正在翻译"提示
+            self.pet.show_message("正在翻译...", msg_type="received")
+            
+            # 构建翻译 prompt
+            translate_prompt = """请识别图片中的文字内容，并将其翻译成中文。如果已经是中文，则翻译成英文。只输出翻译结果，不要添加任何解释或说明。"""
+            
+            # 使用 image_recognition 任务发送请求
+            import asyncio
+            asyncio.run(chat_manager.send_by_task(
+                task_type='image_recognition',
+                text=translate_prompt,
+                image_data=image_base64
+            ))
+            
+        except Exception as e:
+            logger.error(f"翻译失败: {e}", exc_info=True)
+            self.pet.show_message("翻译失败，请重试", msg_type="received")
+    
     def closeEvent(self, event):
         """窗口关闭事件"""
         # 重置截图状态
