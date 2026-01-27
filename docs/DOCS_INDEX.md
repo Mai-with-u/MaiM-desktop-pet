@@ -1,4 +1,4 @@
-# 文档索引
+QWidget: Must construct a QApplication before a QWidget# 文档索引
 
 本文档列出了 `docs/` 目录下的所有文档及其分类。
 
@@ -69,14 +69,16 @@
 | `g4-MESSAGE_UTIL_SUMMARY.md` | 消息格式转换工具总结 | 消息格式转换工具的实现和使用 | 2026-01-13 |
 | `g5-LIVE2D_MODEL_INFO_TOOL.md` | Live2D 模型信息工具 | 查看 Live2D 模型动作和表情的工具 | 2026-01-13 |
 | `g6-ANIMATION_SCHEDULER.md` | Live2D 动画调度器使用指南 | 自动随机动画切换系统 | 2026-01-13 |
+| `g7-QASYNC_INTEGRATION.md` | qasync 集成说明 | PyQt5 与 asyncio 事件循环集成 | 2026-01-28 |
 
 **阅读顺序：**
 1. `g1-MIGRATION_GUIDE.md` - 版本迁移
 2. `g2-LIVE2D_TRACKING_FEATURE.md` - 跟踪功能使用
 3. `g5-LIVE2D_MODEL_INFO_TOOL.md` - 模型信息查看
 4. `g6-ANIMATION_SCHEDULER.md` - 动画调度器使用
-5. `g3-PROTOCOL_LAYER_SUMMARY.md` - 协议层理解
-6. `g4-MESSAGE_UTIL_SUMMARY.md` - 消息转换工具
+5. `g7-QASYNC_INTEGRATION.md` - qasync 事件循环集成
+6. `g3-PROTOCOL_LAYER_SUMMARY.md` - 协议层理解
+7. `g4-MESSAGE_UTIL_SUMMARY.md` - 消息转换工具
 
 ---
 
@@ -134,11 +136,11 @@
 | 文档说明 | 1 |
 | 总体架构（a-） | 2 |
 | 功能特性（f-） | 3 |
-| 指南文档（g-） | 6 |
+| 指南文档（g-） | 7 |
 | 日志/变更（l-） | 3 |
 | 阶段报告（p-） | 5 |
 | 任务清单（t-） | 2 |
-| **总计** | **22** |
+| **总计** | **23** |
 
 ---
 
@@ -224,3 +226,35 @@
 ---
 
 **文档结束**
+| 文件名 | 标题 | 描述 | 创建日期 |
+|--------|------|------|----------|
+| `p1-REFACTORING_COMPLETION_REPORT.md` | 重构完成报告 | 完成的工作、架构改进、后续计划 | 2026-01-08 |
+| `p2-REFACTORING_SUMMARY.md` | 重构摘要 | 重构概览和主要变更 | 2026-01-08 |
+| `p3-PET_REFACTORING_STAGE2_COMPLETION.md` | 阶段 2 完成报告 | 核心架构搭建完成 | 2026-01-09 |
+| `p4-COMMUNICATION_LAYER_REFACTORING.md` | 通信层架构重构完成报告 | 协议层架构重构的完整过程、设计方案和实施结果 | 2026-01-13 |
+| `p5-REFACTORING_TODOLIST.md` | 重构任务清单 | 详细的重构实施计划 | 2026-01-09 |
+
+**阅读顺序：**
+1. `p5-REFACTORING_TODOLIST.md` - 了解重构计划
+2. `p3-PET_REFACTORING_STAGE2_COMPLETION.md` - 阶段 2 成果
+3. `p4-COMMUNICATION_LAYER_REFACTORING.md` - 通信层重构成果
+4. `p1-REFACTORING_COMPLETION_REPORT.md` - 总体完成情况
+5. `p2-REFACTORING_SUMMARY.md` - 快速摘要
+
+---
+
+### 任务清单（t-）
+
+| 文件名 | 标题 | 描述 | 创建日期 |
+|--------|------|------|----------|
+| `t1-TODOLIST.md` | 总体任务清单 | 项目开发的所有待办事项 | 2026-01-08 |
+| `t2-PET_REFACTORING_TODOLIST.md` | pet.py 解构重构任务清单 | 重构实施详细计划 | 2026-01-09 |
+
+**阅读顺序：**
+1. `t1-TODOLIST.md` - 总体任务
+2. `t2-PET_REFACTORING_TODOLIST.md` - 重构任务
+
+---
+
+## 文档统计
+

@@ -38,7 +38,7 @@ def get_qapp():
 
 app = get_qapp()
 
-# 全局桌面宠物实例引用
+# 全局桌面宠物实例引用（延迟初始化）
 _desktop_pet_instance = None
 
 def safe_quit_global():
@@ -386,9 +386,8 @@ class DesktopPet(QWidget):
         logger.info(f"收到用户输入: {text}")
         self.show_message(text=text, msg_type="sent")
         
-        # 使用 asyncio.run 执行异步操作
-        # 这会创建一个新的事件循环来执行异步任务
-        asyncio.run(chat_manager.send_text(
+        # 使用 qasync 事件循环，创建异步任务而不阻塞主线程
+        asyncio.create_task(chat_manager.send_text(
             str(text),
             additional_config={
                 "maimcore_reply_probability_gain": 1  # 回复概率增益（Maim 协议专用）
@@ -594,11 +593,11 @@ class ScreenshotManager:
         if text:
             # 有文本，发送文本+图片的 seglist
             logger.info(f"发送文本+图片复合消息，文本: {text}")
-            asyncio.run(chat_manager.send_pixmap_with_text(pixmap, text))
+            asyncio.create_task(chat_manager.send_pixmap_with_text(pixmap, text))
         else:
             # 无文本，只发送图片
             logger.info("发送纯图片消息")
-            asyncio.run(chat_manager.send_pixmap_with_text(pixmap, ""))
+            asyncio.create_task(chat_manager.send_pixmap_with_text(pixmap, ""))
 
 
 class PetScreenshotSelector(ScreenshotSelector):
@@ -655,9 +654,8 @@ class PetScreenshotSelector(ScreenshotSelector):
             # 构建 OCR prompt
             ocr_prompt = """请识别图片中的文字内容，只输出识别到的文字，不要添加任何解释或说明。"""
             
-            # 使用 image_recognition 任务发送请求
-            import asyncio
-            asyncio.run(chat_manager.send_by_task(
+            # 使用 image_recognition 任务发送请求（使用 qasync 事件循环）
+            asyncio.create_task(chat_manager.send_by_task(
                 task_type='image_recognition',
                 text=ocr_prompt,
                 image_data=image_base64
@@ -694,9 +692,8 @@ class PetScreenshotSelector(ScreenshotSelector):
             # 构建翻译 prompt
             translate_prompt = """请识别图片中的文字内容，并将其翻译成中文。如果已经是中文，则翻译成英文。只输出翻译结果，不要添加任何解释或说明。"""
             
-            # 使用 image_recognition 任务发送请求
-            import asyncio
-            asyncio.run(chat_manager.send_by_task(
+            # 使用 image_recognition 任务发送请求（使用 qasync 事件循环）
+            asyncio.create_task(chat_manager.send_by_task(
                 task_type='image_recognition',
                 text=translate_prompt,
                 image_data=image_base64
@@ -716,5 +713,5 @@ class PetScreenshotSelector(ScreenshotSelector):
         super().closeEvent(event)
 
 
-# 创建实例
-desktop_pet = DesktopPet()
+# 注意：不在模块级别创建实例，因为 QApplication 还未创建
+# 实例将在 main.py 中创建

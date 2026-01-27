@@ -14,3 +14,5 @@ PyOpenGL==3.1.6
 numpy==1.24.3
 # 全局热键支持
 pynput==1.7.6
+# PyQt 与 asyncio 集成
+qasync==0.28.0
