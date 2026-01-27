@@ -381,16 +381,19 @@ class DesktopPet(QWidget):
         import os
         os._exit(0)
     
-    async def handle_user_input(self, text):
-        """处理用户输入"""
+    def handle_user_input(self, text):
+        """处理用户输入（同步接口）"""
         logger.info(f"收到用户输入: {text}")
         self.show_message(text=text, msg_type="sent")
-        await chat_manager.send_text(
+        
+        # 使用 asyncio.run 执行异步操作
+        # 这会创建一个新的事件循环来执行异步任务
+        asyncio.run(chat_manager.send_text(
             str(text),
             additional_config={
                 "maimcore_reply_probability_gain": 1  # 回复概率增益（Maim 协议专用）
             }
-        )
+        ))
     
     def cleanup_resources(self):
         """清理所有资源（不包含退出逻辑）"""
