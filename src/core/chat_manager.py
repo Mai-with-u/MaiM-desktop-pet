@@ -4,6 +4,7 @@
 """
 
 from typing import Optional, Dict, Any, List
+import asyncio
 from src.core.chats.interfaces import IChat
 from src.core.chats.maim_chat import MaimChat
 from src.core.chats.openai_chat import OpenAIChat
@@ -350,6 +351,7 @@ class ChatManager:
         task_type: str,
         text: str = None,
         image_data: str = None,
+        callback=None,
         **kwargs
     ) -> bool:
         """
@@ -359,6 +361,10 @@ class ChatManager:
             task_type: 任务类型（'chat', 'image_recognition', 'expression' 等）
             text: 文本内容
             image_data: 图片数据（base64）
+            callback: 回调函数，签名为：
+                     - 同步回调: def callback(success: bool, task_type: str, response: str = None)
+                     - 异步回调: async def callback(success: bool, task_type: str, response: str = None)
+                     默认为 None（不调用回调）
             **kwargs: 其他参数（如 user_id, user_nickname 等）
         
         Returns:
@@ -484,12 +490,42 @@ class ChatManager:
             # 发送消息
             success = await protocol.send_message(message)
             
+            # 准备回调参数
+            callback_args = {
+                'success': success,
+                'task_type': task_type,
+                'response': None
+            }
+            
+            # 如果是 OpenAI 协议，尝试获取响应
+            if success and protocol_type == 'openai':
+                # OpenAI 协议的 send_message 返回 LLM 响应文本
+                # 如果返回的是 str，说明是响应文本
+                if isinstance(success, str):
+                    callback_args['response'] = success
+                    callback_args['success'] = True  # 成功发送且收到响应
+                elif success:
+                    # 如果返回的是 True，说明发送成功但可能响应是通过其他方式返回的
+                    pass
+            
             if success:
                 logger.info(f"任务 {task_type} 消息发送成功，使用模型: {model_name}")
             else:
                 logger.error(f"任务 {task_type} 消息发送失败")
             
-            return success
+            # 调用回调函数（如果提供）
+            if callback:
+                try:
+                    if asyncio.iscoroutinefunction(callback):
+                        # 异步回调
+                        await callback(**callback_args)
+                    else:
+                        # 同步回调
+                        callback(**callback_args)
+                except Exception as e:
+                    logger.error(f"回调函数执行失败: {e}", exc_info=True)
+            
+            return callback_args['success']
             
         except Exception as e:
             logger.error(f"发送任务消息失败: {e}", exc_info=True)
