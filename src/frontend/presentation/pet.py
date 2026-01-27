@@ -8,7 +8,7 @@ import atexit
 import random
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QShortcut
 from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QIcon, QKeySequence
+from PyQt5.QtGui import QIcon, QKeySequence, QClipboard
 
 from src.core.chat_manager import chat_manager
 from src.core.thread_manager import thread_manager
@@ -698,7 +698,8 @@ class PetScreenshotSelector(ScreenshotSelector):
             asyncio.create_task(chat_manager.send_by_task(
                 task_type='image_recognition',
                 text=translate_prompt,
-                image_data=image_base64
+                image_data=image_base64,
+                callback=self.ocr_callback
             ))
             
         except Exception as e:
@@ -717,6 +718,15 @@ class PetScreenshotSelector(ScreenshotSelector):
         if success and response:
             self.pet.show_message(response, msg_type="received")
             logger.info(f"OCR识别结果: {response}")
+            
+            # 将识别结果写入剪贴板
+            try:
+                clipboard = QApplication.clipboard()
+                clipboard.setText(response)
+                logger.info("OCR识别结果已复制到剪贴板")
+                self.pet.show_message("识别结果已复制到剪贴板", msg_type="received")
+            except Exception as e:
+                logger.error(f"写入剪贴板失败: {e}", exc_info=True)
         else:
             self.pet.show_message("OCR识别失败", msg_type="received")
 
