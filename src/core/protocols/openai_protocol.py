@@ -149,7 +149,7 @@ class OpenAIProtocol(IProtocol):
         except Exception as e:
             logger.error(f"断开连接时出错: {e}", exc_info=True)
     
-    async def send_message(self, message: Dict[str, Any]) -> bool:
+    async def send_message(self, message: Dict[str, Any]) -> Any:
         """
         发送消息（发送给 OpenAI 并获取回复）
         
@@ -178,7 +178,7 @@ class OpenAIProtocol(IProtocol):
                 }
         
         Returns:
-            是否发送成功
+            成功时返回响应文本（str），失败时返回 False
         """
         # 对于无状态的 HTTP 协议，不检查连接状态
         # 即使初始连接测试失败，也会尝试发送消息
@@ -254,12 +254,12 @@ class OpenAIProtocol(IProtocol):
             logger.error(f"发送消息失败: {e}", exc_info=True)
             return False
     
-    async def _call_openai_api(self) -> bool:
+    async def _call_openai_api(self) -> Any:
         """
         调用 OpenAI API（内部方法）
         
         Returns:
-            是否调用成功
+            成功时返回响应文本（str），失败时返回 False
         """
         try:
             # 检查 event loop 是否已关闭
@@ -315,7 +315,8 @@ class OpenAIProtocol(IProtocol):
                         await self._message_handler(simulated_message)
                     
                     logger.debug(f"OpenAI 回复: {assistant_message}")
-                    return True
+                    # 返回响应文本，而不是 True
+                    return assistant_message
                 else:
                     error_text = await response.text()
                     logger.error(f"OpenAI API 请求失败: {response.status} - {error_text}")

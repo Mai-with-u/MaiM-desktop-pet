@@ -658,13 +658,15 @@ class PetScreenshotSelector(ScreenshotSelector):
             asyncio.create_task(chat_manager.send_by_task(
                 task_type='image_recognition',
                 text=ocr_prompt,
-                image_data=image_base64
+                image_data=image_base64,
+                callback=self.ocr_callback
             ))
             
         except Exception as e:
             logger.error(f"OCR识别失败: {e}", exc_info=True)
             self.pet.show_message("OCR识别失败，请重试", msg_type="received")
     
+
     def _on_translate_triggered(self):
         """翻译功能实现"""
         try:
@@ -702,6 +704,22 @@ class PetScreenshotSelector(ScreenshotSelector):
         except Exception as e:
             logger.error(f"翻译失败: {e}", exc_info=True)
             self.pet.show_message("翻译失败，请重试", msg_type="received")
+
+    def ocr_callback(self, success: bool, task_type: str, response: str = None):
+        """OCR 结果回调
+        
+        Args:
+            success: 是否成功
+            task_type: 任务类型
+            response: 响应文本
+        """
+        logger.info(f"OCR回调收到结果，成功: {success}, 任务类型: {task_type},response: {response}")
+        if success and response:
+            self.pet.show_message(response, msg_type="received")
+            logger.info(f"OCR识别结果: {response}")
+        else:
+            self.pet.show_message("OCR识别失败", msg_type="received")
+
     
     def closeEvent(self, event):
         """窗口关闭事件"""

@@ -487,45 +487,60 @@ class ChatManager:
                 logger.error("text 和 image_data 至少需要提供一个")
                 return False
             
-            # 发送消息
-            success = await protocol.send_message(message)
+            # 如果提供了自定义回调，临时禁用协议的 message_handler
+            # 避免重复处理：既调用自定义回调，又触发 message_handler
+            original_handler = None
+            if callback and hasattr(protocol, '_message_handler'):
+                original_handler = protocol._message_handler
+                protocol._message_handler = None
+                logger.debug(f"临时禁用 message_handler 以使用自定义回调: {callback.__name__}")
             
-            # 准备回调参数
-            callback_args = {
-                'success': success,
-                'task_type': task_type,
-                'response': None
-            }
-            
-            # 如果是 OpenAI 协议，尝试获取响应
-            if success and protocol_type == 'openai':
-                # OpenAI 协议的 send_message 返回 LLM 响应文本
-                # 如果返回的是 str，说明是响应文本
-                if isinstance(success, str):
-                    callback_args['response'] = success
-                    callback_args['success'] = True  # 成功发送且收到响应
-                elif success:
-                    # 如果返回的是 True，说明发送成功但可能响应是通过其他方式返回的
-                    pass
-            
-            if success:
-                logger.info(f"任务 {task_type} 消息发送成功，使用模型: {model_name}")
-            else:
-                logger.error(f"任务 {task_type} 消息发送失败")
-            
-            # 调用回调函数（如果提供）
-            if callback:
-                try:
-                    if asyncio.iscoroutinefunction(callback):
-                        # 异步回调
-                        await callback(**callback_args)
-                    else:
-                        # 同步回调
-                        callback(**callback_args)
-                except Exception as e:
-                    logger.error(f"回调函数执行失败: {e}", exc_info=True)
-            
-            return callback_args['success']
+            try:
+                # 发送消息
+                success = await protocol.send_message(message)
+                
+                # 准备回调参数
+                callback_args = {
+                    'success': success,
+                    'task_type': task_type,
+                    'response': None
+                }
+                
+                # 如果是 OpenAI 协议，尝试获取响应
+                if success and protocol_type == 'openai':
+                    # OpenAI 协议的 send_message 返回 LLM 响应文本
+                    # 如果返回的是 str，说明是响应文本
+                    if isinstance(success, str):
+                        callback_args['response'] = success
+                        callback_args['success'] = True  # 成功发送且收到响应
+                    elif success:
+                        # 如果返回的是 True，说明发送成功但可能响应是通过其他方式返回的
+                        pass
+                
+                if success:
+                    logger.info(f"任务 {task_type} 消息发送成功，使用模型: {model_name}")
+                else:
+                    logger.error(f"任务 {task_type} 消息发送失败")
+                
+                # 调用回调函数（如果提供）
+                if callback:
+                    try:
+                        if asyncio.iscoroutinefunction(callback):
+                            # 异步回调
+                            await callback(**callback_args)
+                        else:
+                            # 同步回调
+                            callback(**callback_args)
+                    except Exception as e:
+                        logger.error(f"回调函数执行失败: {e}", exc_info=True)
+                
+                return callback_args['success']
+                
+            finally:
+                # 恢复原来的 message_handler
+                if original_handler is not None and hasattr(protocol, '_message_handler'):
+                    protocol._message_handler = original_handler
+                    logger.debug("已恢复 message_handler")
             
         except Exception as e:
             logger.error(f"发送任务消息失败: {e}", exc_info=True)
