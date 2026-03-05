@@ -8,11 +8,11 @@ tomli-w==1.2.0
 tomli==2.2.1
 maim-message
 aiosqlite==0.19.0
-# Live2D 相关依赖
+# Live2D 
 live2d-py==0.6.0.1
 PyOpenGL==3.1.6
 numpy==1.24.3
-# 全局热键支持
+# hotkey
 pynput==1.7.6
-# PyQt 与 asyncio 集成
+# PyQt asyncio
 qasync==0.28.0
