@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QShor
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QIcon, QKeySequence, QClipboard
 
-from src.core.chat_manager import chat_manager
+from src.core.chat import chat_manager
 from src.core.thread_manager import thread_manager
 from src.frontend.signals import signals_bus
 from src.frontend.bubble_speech import SpeechBubbleList
@@ -387,12 +387,7 @@ class DesktopPet(QWidget):
         self.show_message(text=text, msg_type="sent")
         
         # 使用 qasync 事件循环，创建异步任务而不阻塞主线程
-        asyncio.create_task(chat_manager.send_text(
-            str(text),
-            additional_config={
-                "maimcore_reply_probability_gain": 1  # 回复概率增益（Maim 协议专用）
-            }
-        ))
+        asyncio.create_task(chat_manager.send_message(str(text)))
     
     def cleanup_resources(self):
         """清理所有资源（不包含退出逻辑）"""

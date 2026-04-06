@@ -35,9 +35,20 @@ async def initialize_database():
 async def setup_backend_services():
     """设置所有后台服务"""
     from src.util.logger import logger
+    from src.core.chat import chat_manager
     
     # 初始化数据库
     await initialize_database()
+    
+    # 初始化聊天管理器
+    try:
+        success = await chat_manager.initialize('chat')
+        if success:
+            logger.info("聊天管理器初始化成功")
+        else:
+            logger.warning("聊天管理器初始化失败")
+    except Exception as e:
+        logger.error(f"聊天管理器初始化出错: {e}", exc_info=True)
     
     logger.info("后台服务初始化完成")
 

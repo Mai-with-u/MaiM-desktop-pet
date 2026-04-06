@@ -257,12 +257,12 @@ class EventManager(QObject):
             # 发送消息（使用线程执行，避免阻塞 Qt 事件循环）
             import threading
             import asyncio
-            from src.core.chat_manager import chat_manager
+            from src.core.chat import chat_manager
             
             def send_message_async():
                 """在新线程中执行消息发送"""
                 try:
-                    asyncio.run(chat_manager.send_text("(这是一个类似于摸摸头的友善动作)"))
+                    asyncio.run(chat_manager.send_message("(这是一个类似于摸摸头的友善动作)"))
                 except Exception as e:
                     logger.error(f"发送消息失败: {e}")
             

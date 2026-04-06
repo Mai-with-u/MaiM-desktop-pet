@@ -22,7 +22,7 @@ class StaticRenderer(IRenderer):
     这是最简单但最稳定的渲染方式
     """
     
-    def __init__(self, image_path: str = "./img/small_maimai.png"):
+    def __init__(self, image_path: str = "./img/meow.png"):
         """
         初始化静态渲染器
         
