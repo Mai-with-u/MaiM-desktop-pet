@@ -11,7 +11,7 @@ aiosqlite==0.19.0
 # Live2D 
 live2d-py==0.6.0.1
 PyOpenGL==3.1.6
-numpy==1.24.3
+numpy
 # hotkey
 pynput==1.7.6
 # PyQt asyncio

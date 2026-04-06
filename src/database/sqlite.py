@@ -129,7 +129,7 @@ class SQLiteDatabase(BaseDatabase):
                 user_info.get('user_cardname', ''),
                 message_segment.get('type', ''),
                 json.dumps(message_segment.get('data', ''), ensure_ascii=False),
-                message.get('raw_message', ''),
+                message_dict.get('raw_message', ''),  # 修复：使用 message_dict 而不是 message
                 message_info.get('time', 0)
             ))
             

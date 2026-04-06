@@ -178,3 +178,5 @@ model_config.toml
 # 忽略数据库文件
 data/*
 !data/live2d/.gitkeep
+
+.tempdoc
