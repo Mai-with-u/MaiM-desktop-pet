@@ -45,6 +45,7 @@ class TaskConfig(BaseModel):
     model_list: List[str] = Field(..., description="使用的模型列表（按优先级排序）")
     temperature: Optional[float] = Field(None, description="温度参数")
     max_tokens: Optional[int] = Field(None, description="最大输出token数")
+    timeout: Optional[int] = Field(None, description="超时时间(秒)，优先级高于供应商配置")
 
 
 class ModelTaskConfig(BaseModel):

@@ -10,7 +10,7 @@
 
 from typing import Optional, Dict, Any
 from config import load_model_config
-from config.schema import ModelConfigFile, APIProviderConfig, ModelConfig
+from config.schema import ModelConfigFile, APIProviderConfig, ModelConfig, TaskConfig
 from src.util.logger import logger
 
 
@@ -74,7 +74,7 @@ class ProtocolManager:
         # 3. 返回协议类型
         return provider_config.client_type
     
-    def get_connection_info(self, model_name: str) -> Optional[Dict[str, Any]]:
+    def get_connection_info(self, model_name: str, task_config: Optional[TaskConfig] = None) -> Optional[Dict[str, Any]]:
         """
         根据 model_name 获取连接信息
         
@@ -82,6 +82,7 @@ class ProtocolManager:
         
         Args:
             model_name: 模型名称
+            task_config: 任务配置（可选，用于任务级 timeout）
         
         Returns:
             连接信息字典，包含：
@@ -90,7 +91,7 @@ class ProtocolManager:
             - api_key: API 密钥
             - model_identifier: 模型标识符
             - max_retry: 最大重试次数
-            - timeout: 超时时间
+            - timeout: 超时时间（任务级优先）
             - retry_interval: 重试间隔
         """
         if not self._initialized:
@@ -118,9 +119,14 @@ class ProtocolManager:
             'model_name': model_config.name,
             'provider_name': provider_config.name,
             'max_retry': provider_config.max_retry,
-            'timeout': provider_config.timeout,
+            'timeout': provider_config.timeout,  # 默认使用供应商的 timeout
             'retry_interval': provider_config.retry_interval,
         }
+        
+        # 如果有任务配置且设置了 timeout，则覆盖供应商的 timeout
+        if task_config and hasattr(task_config, 'timeout') and task_config.timeout:
+            connection_info['timeout'] = task_config.timeout
+            logger.debug(f"使用任务级超时: {task_config.timeout}秒")
 
         # 4. 如果是 maim 协议，添加 platform 信息
         if provider_config.client_type == 'maim':
@@ -166,8 +172,8 @@ class ProtocolManager:
         
         model_name = model_list[model_index]
         
-        # 4. 获取连接信息
-        return self.get_connection_info(model_name)
+        # 4. 获取连接信息（传入 task_config 以支持任务级 timeout）
+        return self.get_connection_info(model_name, task_config)
     
     # ===================================================================
     # 内部方法：查找配置

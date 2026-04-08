@@ -73,11 +73,16 @@ class ChatManager:
             # 3. 根据协议类型初始化客户端
             protocol_type = connection_info['protocol_type']
             
+            # 协议选择日志
+            logger.info("=" * 60)
+            logger.info(f"协议选择: {protocol_type}")
+            logger.info(f"  模型: {connection_info.get('model_name')}")
+            logger.info(f"  供应商: {connection_info.get('provider_name')}")
+            logger.info("=" * 60)
+            
             if protocol_type == 'maim':
-                # WebSocket 协议
                 success = await self._initialize_maim(connection_info)
             elif protocol_type in ['openai', 'gemini']:
-                # HTTP API 协议
                 success = await self._initialize_http(connection_info)
             else:
                 logger.error(f"不支持的协议类型: {protocol_type}")
@@ -206,6 +211,8 @@ class ChatManager:
 
             protocol_type = connection_info['protocol_type']
 
+            logger.info(f"[发送消息] {protocol_type} | {content[:50]}")
+
             # 根据协议类型发送
             if protocol_type == 'maim':
                 success = await self._send_maim(content, connection_info, user_id, user_name)
@@ -216,9 +223,9 @@ class ChatManager:
                 return False
 
             if success:
-                logger.info(f"消息发送成功: {content[:50]}...")
+                logger.info(f"[发送成功] {content[:30]}...")
             else:
-                logger.warning("消息发送失败")
+                logger.warning(f"[发送失败] {content[:30]}...")
 
             return success
 
@@ -241,6 +248,8 @@ class ChatManager:
         """
         try:
             url = f"{connection_info['base_url']}/chat/completions"
+            
+            # 使用完整的 API key 进行认证（不要截断！）
             headers = {
                 "Authorization": f"Bearer {connection_info['api_key']}",
                 "Content-Type": "application/json"
@@ -256,6 +265,11 @@ class ChatManager:
                 "stream": False
             }
 
+            # HTTP 发送日志（只显示 API key 前10位用于安全）
+            logger.info(f"[HTTP发送] {connection_info['base_url']}")
+            logger.info(f"  模型: {connection_info['model_identifier']}")
+            logger.info(f"  消息: {content[:50]}")
+
             # 每次请求临时创建 session，请求完成后自动关闭
             timeout = aiohttp.ClientTimeout(total=connection_info.get('timeout', 30))
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -264,11 +278,13 @@ class ChatManager:
                         result = await response.json()
                         reply = result['choices'][0]['message']['content']
 
+                        # HTTP 接收日志
+                        logger.info(f"[HTTP接收] {reply[:50]}")
+
                         # 触发 UI 信号
                         from src.frontend.signals import signals_bus
                         signals_bus.message_received.emit(reply)
 
-                        logger.debug(f"收到回复: {reply[:50]}...")
                         return True
                     else:
                         error = await response.text()
@@ -313,7 +329,7 @@ class ChatManager:
                 # 未知类型
                 reply_content = f'[{seg_type}]'
 
-            logger.debug(f"收到 Maim 回复: {reply_content[:50]}...")
+            logger.info(f"[接收消息] {seg_type} | {reply_content[:50]}")
 
             # 触发 UI 信号
             from src.frontend.signals import signals_bus
@@ -396,6 +412,200 @@ class ChatManager:
     def is_initialized(self) -> bool:
         """是否已初始化"""
         return self._initialized
+    
+    async def recognize_image(self, image_base64: str, prompt: str = None, callback=None) -> bool:
+        """
+        识图接口（独立于聊天消息）
+        
+        Args:
+            image_base64: 图片的 base64 编码
+            prompt: 自定义 prompt（可选）
+            callback: 回调函数 callback(success, task_type, response)
+        
+        Returns:
+            是否发送成功
+        """
+        try:
+            # 获取 image_recognition 任务的连接信息
+            connection_info = self._protocol_manager.get_task_connection_info('image_recognition')
+            
+            if not connection_info:
+                logger.warning("无法获取 image_recognition 任务连接信息")
+                return False
+            
+            protocol_type = connection_info['protocol_type']
+            
+            logger.info(f"[识图请求] {protocol_type}")
+            
+            # 默认识图 prompt
+            if not prompt:
+                prompt = "请识别图片中的内容，并详细描述你看到的内容。"
+            
+            # 根据协议类型发送
+            if protocol_type in ['openai', 'gemini']:
+                success = await self._send_vision_request(
+                    prompt=prompt,
+                    image_base64=image_base64,
+                    connection_info=connection_info,
+                    task_type='image_recognition',
+                    callback=callback
+                )
+            else:
+                logger.error(f"识图不支持协议类型: {protocol_type}")
+                return False
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"识图请求失败: {e}", exc_info=True)
+            return False
+    
+    async def translate_image(self, image_base64: str, callback=None) -> bool:
+        """
+        翻译接口（独立于聊天消息）
+        
+        Args:
+            image_base64: 图片的 base64 编码
+            callback: 回调函数 callback(success, task_type, response)
+        
+        Returns:
+            是否发送成功
+        """
+        try:
+            # 获取 image_recognition 任务的连接信息
+            connection_info = self._protocol_manager.get_task_connection_info('image_recognition')
+            
+            if not connection_info:
+                logger.warning("无法获取 image_recognition 任务连接信息")
+                return False
+            
+            protocol_type = connection_info['protocol_type']
+            
+            logger.info(f"[翻译请求] {protocol_type}")
+            
+            # 翻译专用 prompt
+            translate_prompt = """请识别图片中的文字内容，并将其翻译成中文。
+如果图片中的文字已经是中文，则翻译成英文。
+只输出翻译结果，不要添加任何解释或说明。"""
+            
+            # 根据协议类型发送
+            if protocol_type in ['openai', 'gemini']:
+                success = await self._send_vision_request(
+                    prompt=translate_prompt,
+                    image_base64=image_base64,
+                    connection_info=connection_info,
+                    task_type='translation',
+                    callback=callback
+                )
+            else:
+                logger.error(f"翻译不支持协议类型: {protocol_type}")
+                return False
+            
+            return success
+            
+        except Exception as e:
+            logger.error(f"翻译请求失败: {e}", exc_info=True)
+            return False
+    
+    async def _send_vision_request(
+        self, 
+        prompt: str, 
+        image_base64: str, 
+        connection_info: Dict[str, Any],
+        task_type: str,
+        callback=None
+    ) -> bool:
+        """
+        发送视觉请求（Vision API）
+        
+        Args:
+            prompt: 提示词
+            image_base64: 图片 base64
+            connection_info: 连接信息
+            task_type: 任务类型
+            callback: 回调函数
+        
+        Returns:
+            是否发送成功
+        """
+        try:
+            url = f"{connection_info['base_url']}/chat/completions"
+            
+            headers = {
+                "Authorization": f"Bearer {connection_info['api_key']}",
+                "Content-Type": "application/json"
+            }
+            
+            # 构建 Vision API 格式的消息
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ]
+            
+            # 构建请求数据
+            data = {
+                "model": connection_info['model_identifier'],
+                "messages": messages,
+                "stream": False
+            }
+            
+            # Vision 发送日志
+            logger.info(f"[Vision发送] {connection_info['base_url']}")
+            logger.info(f"  模型: {connection_info['model_identifier']}")
+            logger.info(f"  任务: {task_type}")
+            
+            # Vision 请求需要更长的超时时间（处理图片耗时）
+            vision_timeout = connection_info.get('timeout', 60)  # 默认 60 秒
+            timeout = aiohttp.ClientTimeout(total=vision_timeout)
+            
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=data, headers=headers) as response:
+                    if response.status == 200:
+                        result = await response.json()
+                        reply = result['choices'][0]['message']['content']
+                        
+                        # Vision 接收日志
+                        logger.info(f"[Vision接收] {reply[:50]}")
+                        
+                        # 调用回调函数
+                        if callback:
+                            callback(True, task_type, reply)
+                        
+                        return True
+                    else:
+                        error = await response.text()
+                        logger.error(f"Vision 请求失败: {response.status} - {error}")
+                        
+                        if callback:
+                            callback(False, task_type, None)
+                        
+                        return False
+        
+        except asyncio.TimeoutError:
+            logger.error(f"Vision 请求超时（超过 {vision_timeout} 秒）")
+            if callback:
+                callback(False, task_type, None)
+            return False
+        except Exception as e:
+            logger.error(f"发送 Vision 请求失败: {e}", exc_info=True)
+            
+            if callback:
+                callback(False, task_type, None)
+            
+            return False
     
     async def cleanup(self):
         """清理资源"""

@@ -633,7 +633,7 @@ class PetScreenshotSelector(ScreenshotSelector):
             # 转换为 base64
             image_base64 = pixmap_to_base64(selected_pixmap)
             
-            logger.info("OCR识别功能触发，发送请求到LLM")
+            logger.info("OCR识别功能触发，发送请求到 Vision API")
             
             # 先关闭截图窗口，恢复界面
             self.pet.screenshot_manager.is_screenshotting = False
@@ -646,14 +646,13 @@ class PetScreenshotSelector(ScreenshotSelector):
             # 显示"正在识别"提示
             self.pet.show_message("正在识别文字...", msg_type="received")
             
-            # 构建 OCR prompt
+            # OCR 专用 prompt
             ocr_prompt = """请识别图片中的文字内容，只输出识别到的文字，不要添加任何解释或说明。"""
             
-            # 使用 image_recognition 任务发送请求（使用 qasync 事件循环）
-            asyncio.create_task(chat_manager.send_by_task(
-                task_type='image_recognition',
-                text=ocr_prompt,
-                image_data=image_base64,
+            # 使用识图接口
+            asyncio.create_task(chat_manager.recognize_image(
+                image_base64=image_base64,
+                prompt=ocr_prompt,
                 callback=self.ocr_callback
             ))
             
@@ -673,7 +672,7 @@ class PetScreenshotSelector(ScreenshotSelector):
             # 转换为 base64
             image_base64 = pixmap_to_base64(selected_pixmap)
             
-            logger.info("翻译功能触发，发送请求到LLM")
+            logger.info("翻译功能触发，发送请求到 Vision API")
             
             # 先关闭截图窗口，恢复界面
             self.pet.screenshot_manager.is_screenshotting = False
@@ -686,14 +685,9 @@ class PetScreenshotSelector(ScreenshotSelector):
             # 显示"正在翻译"提示
             self.pet.show_message("正在翻译...", msg_type="received")
             
-            # 构建翻译 prompt
-            translate_prompt = """请识别图片中的文字内容，并将其翻译成中文。如果已经是中文，则翻译成英文。只输出翻译结果，不要添加任何解释或说明。"""
-            
-            # 使用 image_recognition 任务发送请求（使用 qasync 事件循环）
-            asyncio.create_task(chat_manager.send_by_task(
-                task_type='image_recognition',
-                text=translate_prompt,
-                image_data=image_base64,
+            # 使用翻译接口
+            asyncio.create_task(chat_manager.translate_image(
+                image_base64=image_base64,
                 callback=self.ocr_callback
             ))
             
