@@ -304,6 +304,7 @@ class EventManager(QObject):
         
         # 主菜单项
         actions = [
+            ("💬 打开聊天窗口", self.open_chat_window),
             ("🐾 隐藏", self.parent.hide),
             ("✏️ 聊聊天", self.show_chat_input),
             ("📸 截图", self.start_screenshot),
@@ -362,6 +363,11 @@ class EventManager(QObject):
         
         return menu
     
+    def open_chat_window(self):
+        """打开聊天窗口"""
+        from src.frontend.chat_window import ChatWindow
+        ChatWindow.show_chat_window(parent=None, pet_window=self.parent)
+
     def show_chat_input(self):
         """显示聊天输入框"""
         if self.bubble_manager:

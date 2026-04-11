@@ -20,8 +20,8 @@ if TYPE_CHECKING:
 
 class SpeechBubble(QLabel):
     _vertical_spacing = 5  # 气泡之间的垂直间距
-    
-    def __init__(self, parent=None, bubble_type="received", text: str = "", pixmap: Optional[QPixmap] = None):
+
+    def __init__(self, parent=None, bubble_type="received", text: str = "", pixmap: Optional[QPixmap] = None, on_click=None):
         super().__init__(parent)
         self.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -31,6 +31,7 @@ class SpeechBubble(QLabel):
         self.original_pixmap = pixmap
         self.scaled_pixmap = None
         self.bubble_type = bubble_type  # "received" 或 "sent"
+        self.on_click_callback = on_click  # 点击回调函数
         
             # 添加边距和间距的初始化（应用缩放倍率）
         self._content_margin = int(10 * scale_factor)  # 内容与气泡边缘的边距
@@ -179,29 +180,36 @@ class SpeechBubble(QLabel):
         """淡出并移除气泡"""
         if self.animation_group.state() == QPropertyAnimation.Running:
             self.animation_group.stop()
-        
+
         self.animation_group.clear()
         fade_anim = QPropertyAnimation(self, b"windowOpacity")
         fade_anim.setDuration(500)
         fade_anim.setStartValue(1.0)
         fade_anim.setEndValue(0.0)
         fade_anim.finished.connect(self.deleteLater)  # 直接删除对象
-        
+
         self.animation_group.addAnimation(fade_anim)
         self.animation_group.start()
+
+    def mousePressEvent(self, event):
+        """鼠标点击事件"""
+        if event.button() == Qt.LeftButton and self.on_click_callback:
+            self.on_click_callback()
+        super().mousePressEvent(event)
 
 
 class SpeechBubbleList():
     _active_bubbles : list[SpeechBubble]
     _vertical_spacing = int(5 * scale_factor)
-    
-    def __init__(self, parent=None, use_database: bool = True) -> None:
+
+    def __init__(self, parent=None, use_database: bool = True, on_bubble_click=None) -> None:
         self.parent = parent
         self._active_bubbles = []  # 保存所有活动气泡
         self.use_database = use_database  # 是否使用数据库存储
+        self.on_bubble_click = on_bubble_click  # 气泡点击回调
 
-    def add_message(self, 
-                  message: str | MessageBase = "", 
+    def add_message(self,
+                  message: str | MessageBase = "",
                   msg_type: Literal["received", "sent"] = "received",
                   pixmap: Optional[QPixmap] = None,
                   save_to_db: bool = True):
@@ -234,7 +242,8 @@ class SpeechBubbleList():
             parent=self.parent,
             bubble_type=msg_type,
             text=text_content,
-            pixmap=pixmap
+            pixmap=pixmap,
+            on_click=self.on_bubble_click
         )
         self._active_bubbles.append(new_bubble)
         new_bubble.show_message()

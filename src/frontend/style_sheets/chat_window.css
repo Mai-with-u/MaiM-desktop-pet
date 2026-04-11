@@ -1,0 +1,132 @@
+/* 聊天窗口样式表 */
+
+/* 主窗口 */
+ChatWindow {
+    background-color: #f5f5f5;
+}
+
+/* 标题栏 */
+#header {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #4CAF50, stop:1 #45a049);
+    border: none;
+    border-radius: 0px;
+}
+
+#header QLabel {
+    color: white;
+    font-weight: bold;
+}
+
+/* 关闭按钮 */
+#close_btn {
+    background-color: transparent;
+    color: white;
+    border: none;
+    border-radius: 15px;
+    font-size: 14px;
+    min-width: 30px;
+    max-width: 30px;
+    min-height: 30px;
+    max-height: 30px;
+}
+
+#close_btn:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+#close_btn:pressed {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 消息显示区域 */
+#message_area {
+    background-color: #ffffff;
+    border: none;
+    border-top: 1px solid #e0e0e0;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+QScrollArea {
+    background-color: transparent;
+    border: none;
+}
+
+/* 滚动条样式 */
+QScrollBar:vertical {
+    background-color: #f0f0f0;
+    width: 10px;
+    border-radius: 5px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #c0c0c0;
+    min-height: 30px;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #a0a0a0;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background-color: transparent;
+}
+
+/* 输入区域 */
+#input_area {
+    background-color: #f8f8f8;
+    border-top: 1px solid #ddd;
+}
+
+/* 输入框 */
+#input_field {
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 13px;
+    color: #333;
+}
+
+#input_field:focus {
+    border: 1px solid #4CAF50;
+}
+
+#input_field::placeholder {
+    color: #999;
+}
+
+/* 发送按钮 */
+#send_btn {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #4CAF50, stop:1 #45a049);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: bold;
+    min-width: 70px;
+}
+
+#send_btn:hover {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+        stop:0 #5cb860, stop:1 #4CAF50);
+}
+
+#send_btn:pressed {
+    background-color: #3d8b40;
+}
+
+#send_btn:disabled {
+    background-color: #cccccc;
+    color: #888;
+}

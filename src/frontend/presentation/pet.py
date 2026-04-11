@@ -177,18 +177,26 @@ class DesktopPet(QWidget):
     
     def init_subsystems(self):
         """初始化子系统"""
-        # 气泡系统
-        self.chat_bubbles = SpeechBubbleList(parent=self)
+        # 气泡系统（传入气泡点击回调）
+        self.chat_bubbles = SpeechBubbleList(
+            parent=self,
+            on_bubble_click=self._on_bubble_click
+        )
         self.bubble_input = BubbleInput(parent=self, on_send=self.handle_user_input)
         self.bubble_input.hide()
-        
+
         # 截图选择器
         self.screenshot_selector = None
-        
+
         # 将气泡组件设置到管理器
         self.bubble_manager.set_widgets(self.chat_bubbles, self.bubble_input)
-        
+
         logger.info("子系统初始化完成")
+
+    def _on_bubble_click(self):
+        """气泡点击回调，打开聊天窗口"""
+        from src.frontend.chat_window import ChatWindow
+        ChatWindow.show_chat_window(parent=None, pet_window=self)
     
     def init_ui(self):
         """初始化 UI"""
@@ -310,7 +318,12 @@ class DesktopPet(QWidget):
                 bubble.hide()
         if hasattr(self, 'bubble_input'):
             self.bubble_input.hide()
-        
+
+        # 关闭聊天窗口
+        from src.frontend.chat_window import ChatWindow
+        if ChatWindow._instance:
+            ChatWindow._instance.close()
+
         logger.info("桌面宠物资源已清理")
     
     def create_tray_menu(self) -> QMenu:
