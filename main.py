@@ -56,31 +56,36 @@ async def main():
     """主函数 - 使用 qasync 事件循环"""
     from src.util.logger import logger
     from src.frontend.presentation.pet import DesktopPet
-    
+
     # 创建 Qt 应用
     app = QApplication(sys.argv)
-    
+
     # 设置 qasync 事件循环
     loop = qasync.QEventLoop(app)
     asyncio.set_event_loop(loop)
-    
+
     # 初始化后台服务
     await setup_backend_services()
-    
+
     # 创建并显示桌面宠物
     chat_pet = DesktopPet()
     logger.info("✓ 桌面宠物启动")
     chat_pet.show()
-    
-    # 启动事件循环
-    with loop:
-        await loop.run_forever()
 
-if __name__ == "__main__":
+    # 运行 Qt 应用（qasync 会自动管理事件循环）
+    # 注意：app.exec_() 返回退出代码，不是协程
+    app.exec_()
+
+
+def run_app():
+    """运行应用程序"""
     try:
         # 使用 asyncio.run 启动主函数
-        # qasync 会在内部集成 Qt 事件循环
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n程序正在退出...")
         sys.exit(0)
+
+
+if __name__ == "__main__":
+    run_app()

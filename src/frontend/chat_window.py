@@ -29,14 +29,12 @@ class ChatWindow(QWidget):
     def __init__(self, parent=None, pet_window=None):
         super().__init__(parent)
         self.pet_window = pet_window  # 桌宠主窗口引用
+        self._history_loaded = False  # 历史消息加载标记
 
         # 窗口设置
         self.init_window()
         self.init_ui()
         self.init_signals()
-
-        # 加载历史消息
-        QTimer.singleShot(100, self._load_history)
 
         logger.info("聊天窗口已创建")
 
@@ -97,7 +95,7 @@ class ChatWindow(QWidget):
         close_btn.setObjectName("close_btn")
         close_btn.setFixedSize(int(30 * scale_factor), int(30 * scale_factor))
         close_btn.setFont(QFont("Arial", int(12 * scale_factor)))
-        close_btn.clicked.connect(self.close)
+        close_btn.clicked.connect(self._on_close_clicked)  # 点击隐藏而非关闭
         layout.addWidget(close_btn)
 
         # 拖拽相关
@@ -290,12 +288,17 @@ class ChatWindow(QWidget):
                 x = pet_geo.left() - self.width() - int(20 * scale_factor)
                 y = pet_geo.top()
 
-                # 边界检查
-                screen = QApplication.primaryScreen().availableGeometry()
-                if x < screen.left():
+                # 边界检查（安全获取屏幕）
+                screen = QApplication.primaryScreen()
+                if screen:
+                    screen_geo = screen.availableGeometry()
+                    if x < screen_geo.left():
+                        x = pet_geo.right() + int(20 * scale_factor)
+                    if y + self.height() > screen_geo.bottom():
+                        y = screen_geo.bottom() - self.height()
+                else:
+                    # 无法获取屏幕时使用默认偏移
                     x = pet_geo.right() + int(20 * scale_factor)
-                if y + self.height() > screen.bottom():
-                    y = screen.bottom() - self.height()
 
                 self.move(x, y)
 
@@ -303,19 +306,25 @@ class ChatWindow(QWidget):
             self.activateWindow()
             self.input_field.setFocus()
 
+            # 首次显示时加载历史消息
+            if not self._history_loaded:
+                self._start_load_history()
+
+    def _start_load_history(self):
+        """启动历史消息加载（同步包装器）"""
+        self._history_loaded = True
+        asyncio.create_task(self._load_history())
+
+    def _on_close_clicked(self):
+        """点击关闭按钮时隐藏窗口"""
+        self.hide()
+        logger.info("聊天窗口已隐藏")
+
     def closeEvent(self, event):
-        """窗口关闭事件"""
-        # 断开信号连接
-        try:
-            signals_bus.message_received.disconnect(self._on_message_received)
-        except TypeError:
-            pass  # 可能已经断开
-
-        # 清除单例引用
-        ChatWindow._instance = None
-
-        super().closeEvent(event)
-        logger.info("聊天窗口已关闭")
+        """窗口关闭事件 - 只隐藏，不真正关闭"""
+        event.ignore()  # 拒绝关闭事件
+        self.hide()
+        logger.info("聊天窗口已隐藏")
 
     @classmethod
     def get_instance(cls, parent=None, pet_window=None) -> 'ChatWindow':

@@ -391,16 +391,17 @@ class DesktopPet(QWidget):
         
         # 隐藏所有窗口
         self.hide()
-        if hasattr(self, 'chat_bubbles'):
+        if hasattr(self, 'chat_bubbles') and self.chat_bubbles:
             for bubble in self.chat_bubbles._active_bubbles:
-                bubble.hide()
-        if hasattr(self, 'bubble_input'):
+                if bubble:
+                    bubble.hide()
+        if hasattr(self, 'bubble_input') and self.bubble_input:
             self.bubble_input.hide()
 
-        # 关闭聊天窗口
+        # 隐藏聊天窗口（不关闭，保持单例）
         from src.frontend.chat_window import ChatWindow
-        if ChatWindow._instance:
-            ChatWindow._instance.close()
+        if ChatWindow._instance and ChatWindow._instance.isVisible():
+            ChatWindow._instance.hide()
 
         logger.info("桌面宠物资源已清理")
     
