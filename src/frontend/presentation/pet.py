@@ -6,6 +6,7 @@
 import asyncio
 import atexit
 import random
+import logging
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QShortcut
 from PyQt5.QtCore import Qt, QTimer, QPoint
 from PyQt5.QtGui import QIcon, QKeySequence, QClipboard
@@ -18,28 +19,55 @@ from src.frontend.bubble_input import BubbleInput
 from src.frontend.ScreenshotSelector import ScreenshotSelector
 
 from src.util.logger import logger
-from src.util.image_util import get_scale_factor, pixmap_to_base64
-
-from config import load_config, get_scale_factor
-
-config = load_config()
-scale_factor = get_scale_factor(config)
+from src.util.image_util import get_scale_factor as util_get_scale_factor, pixmap_to_base64
 
 import sys
-from typing import Literal
+from typing import Literal, Optional
 
-# 从 main.py 导入 QApplication 实例（避免创建多个实例）
-# 注意：这个导入需要在模块级别，所以会导致循环依赖
-# 我们通过 sys.modules 来获取已创建的 app 实例
+# 默认缩放倍率（用于配置加载失败时的降级）
+_DEFAULT_SCALE_FACTOR = 1.0
+
+# 延迟加载配置，避免模块导入时崩溃
+_config = None
+_scale_factor = _DEFAULT_SCALE_FACTOR
+
+
+def _get_config():
+    """延迟加载配置"""
+    global _config, _scale_factor
+    if _config is None:
+        try:
+            from config import load_config, get_scale_factor
+            _config = load_config()
+            _scale_factor = get_scale_factor(_config) if _config else _DEFAULT_SCALE_FACTOR
+        except Exception as e:
+            logger.warning(f"配置加载失败，使用默认值: {e}")
+            _scale_factor = _DEFAULT_SCALE_FACTOR
+    return _config
+
+
+def _get_scale_factor() -> float:
+    """获取缩放倍率"""
+    _get_config()  # 确保配置已加载
+    return _scale_factor
+
+
+# 为了兼容现有代码，导出 config 和 scale_factor
+config = None  # 延迟初始化
+scale_factor = _DEFAULT_SCALE_FACTOR
+
+
 def get_qapp():
     """获取 QApplication 实例"""
     from PyQt5.QtWidgets import QApplication
     return QApplication.instance()
 
+
 app = get_qapp()
 
 # 全局桌面宠物实例引用（延迟初始化）
-_desktop_pet_instance = None
+_desktop_pet_instance: Optional['DesktopPet'] = None
+
 
 def safe_quit_global():
     """全局安全退出函数 - 确保无论如何退出都能清理所有资源"""
@@ -47,9 +75,6 @@ def safe_quit_global():
     logger.info("全局清理资源...")
     if _desktop_pet_instance:
         try:
-            # 不再调用 safe_quit（它会创建 event loop）
-            # 只执行必要的同步清理
-            # 协议管理器的清理已经在自己的线程中处理
             logger.info("全局清理：守护线程将自动退出")
         except Exception as e:
             logger.error(f"全局清理时出错: {e}", exc_info=True)
@@ -57,60 +82,92 @@ def safe_quit_global():
 
 atexit.register(safe_quit_global)
 
-# 连接应用程序退出信号 - 处理 PyQt 应用的正常退出
-# 注意：这可能在 atexit 之前触发，所以需要处理重复调用
-# app.aboutToQuit.connect(safe_quit_global)
+
+def _safe_get_primary_screen():
+    """安全获取主屏幕，返回 None 如果失败"""
+    try:
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            logger.warning("无法获取主屏幕")
+        return screen
+    except Exception as e:
+        logger.error(f"获取主屏幕失败: {e}")
+        return None
 
 
 class DesktopPet(QWidget):
     """
     重构后的桌面宠物主窗口
-    
+
     职责：
     - 窗口生命周期管理
     - 子窗口容器管理
     - 布局管理
     - 事件委托
     """
-    
+
     def __init__(self):
         super().__init__()
-        
+
+        # 加载配置（使用延迟加载的配置）
+        global config, scale_factor
+        config = _get_config()
+        scale_factor = _get_scale_factor()
+
         # 初始化窗口
         self.init_window()
-        
+
         # 初始化管理器
         self.init_managers()
-        
+
         # 注册清理函数到线程管理器
         self._register_cleanup_functions()
-        
+
         # 初始化子系统
         self.init_subsystems()
-        
+
         # 初始化 UI
         self.init_ui()
-        
+
         # 初始化托盘图标
         self.init_tray_icon()
-        
+
         # 初始化快捷键
         self.init_shortcuts()
-        
-        # 连接信号
-        signals_bus.message_received.connect(self.show_message)
-        
+
+        # 连接信号（保存连接以便后续断开）
+        self._signal_connections = []
+        self._connect_signal(signals_bus.message_received, self.show_message)
+
         # 窥屏功能
         self.is_peeking = False
         self.peek_timer = QTimer(self)
         self.peek_timer.timeout.connect(self._on_peek_timer)
-        
+
         # 保存全局引用以便在强制退出时也能清理
         global _desktop_pet_instance
         _desktop_pet_instance = self
-        
+
         logger.info("重构后的桌面宠物初始化完成")
-    
+
+    def _connect_signal(self, signal, slot):
+        """安全连接信号，并记录连接以便后续断开"""
+        try:
+            signal.connect(slot)
+            self._signal_connections.append((signal, slot))
+        except Exception as e:
+            logger.error(f"连接信号失败: {e}")
+
+    def _disconnect_signals(self):
+        """断开所有已连接的信号"""
+        for signal, slot in self._signal_connections:
+            try:
+                signal.disconnect(slot)
+            except (TypeError, RuntimeError):
+                # 信号可能已经断开或对象已销毁
+                pass
+        self._signal_connections.clear()
+
     def init_window(self):
         """初始化窗口属性"""
         self.setWindowFlags(
@@ -119,19 +176,24 @@ class DesktopPet(QWidget):
             Qt.SubWindow
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
-        
+
         # 应用缩放倍率
         base_width = 400
         base_height = 600
         scaled_width = int(base_width * scale_factor)
         scaled_height = int(base_height * scale_factor)
         self.setFixedSize(scaled_width, scaled_height)
-        
-        # 设置初始位置
-        screen_geo = QApplication.primaryScreen().availableGeometry()
-        x = screen_geo.width() - self.width() - int(20 * scale_factor)
-        y = screen_geo.height() - self.height() - int(80 * scale_factor)
-        self.move(x, y)
+
+        # 设置初始位置（安全获取屏幕）
+        screen = _safe_get_primary_screen()
+        if screen:
+            screen_geo = screen.availableGeometry()
+            x = screen_geo.width() - self.width() - int(20 * scale_factor)
+            y = screen_geo.height() - self.height() - int(80 * scale_factor)
+            self.move(x, y)
+        else:
+            # 无法获取屏幕时使用默认位置
+            self.move(100, 100)
     
     def init_managers(self):
         """初始化核心管理器"""
@@ -212,52 +274,68 @@ class DesktopPet(QWidget):
     def init_tray_icon(self):
         """初始化系统托盘图标"""
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QIcon("./img/maim.png"))
+
+        # 使用绝对路径加载图标
+        try:
+            from pathlib import Path
+            project_root = Path(__file__).parent.parent.parent.parent.resolve()
+            icon_path = project_root / "img" / "maim.png"
+            if icon_path.exists():
+                self.tray_icon.setIcon(QIcon(str(icon_path)))
+            else:
+                # 降级使用相对路径
+                self.tray_icon.setIcon(QIcon("./img/maim.png"))
+        except Exception as e:
+            logger.warning(f"加载托盘图标失败: {e}")
+            self.tray_icon.setIcon(QIcon("./img/maim.png"))
+
         self.tray_icon.setToolTip("桌面宠物")
-        
+
         # 创建菜单
         tray_menu = self.create_tray_menu()
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
-        
+
         # 如果配置中要求隐藏终端
-        if config.hide_console:
+        if config and config.hide_console:
             self.state_manager.hide_console()
             self.show_message("终端藏在托盘栏咯，进入托盘栏打开叭")
-        
+
         logger.info("托盘图标初始化完成")
     
     def init_shortcuts(self):
         """初始化全局快捷键"""
-        logger.info(f"开始初始化全局快捷键...")
-        
+        logger.info("开始初始化全局快捷键...")
+
         # 注册截图热键
-        if config.Screenshot_shortcuts is not None:
+        screenshot_shortcuts = getattr(config, 'Screenshot_shortcuts', None) if config else None
+        if screenshot_shortcuts is not None:
             success = self.hotkey_manager.register_hotkey(
                 name="screenshot",
-                shortcut_str=config.Screenshot_shortcuts,
+                shortcut_str=screenshot_shortcuts,
                 callback=self._on_screenshot_hotkey
             )
-            
+
             if success:
-                logger.info(f"✓ 已注册全局截图快捷键: {config.Screenshot_shortcuts}")
+                logger.info(f"✓ 已注册全局截图快捷键: {screenshot_shortcuts}")
             else:
                 # 降级使用 QShortcut
                 logger.warning("全局热键注册失败，降级使用 QShortcut")
                 self._init_fallback_shortcut()
         else:
-            logger.info(f"截图快捷键未配置（值为 None）")
-        
+            logger.info("截图快捷键未配置（值为 None）")
+
         # 启动热键监听器
         self.hotkey_manager.start()
-    
+
     def _init_fallback_shortcut(self):
         """降级使用 QShortcut（仅窗口有焦点时有效）"""
-        if config.Screenshot_shortcuts is not None:
-            logger.info(f"使用 QShortcut 注册截图快捷键: {config.Screenshot_shortcuts}")
-            shortcut = QShortcut(QKeySequence(config.Screenshot_shortcuts), self)
+        screenshot_shortcuts = getattr(config, 'Screenshot_shortcuts', None) if config else None
+        if screenshot_shortcuts is not None:
+            logger.info(f"使用 QShortcut 注册截图快捷键: {screenshot_shortcuts}")
+            shortcut = QShortcut(QKeySequence(screenshot_shortcuts), self)
             shortcut.activated.connect(self.screenshot_manager.start_screenshot)
-            logger.info(f"✓ 截图快捷键注册成功（仅窗口有焦点时有效）")
+            logger.info("✓ 截图快捷键注册成功（仅窗口有焦点时有效）")
     
     def _on_screenshot_hotkey(self):
         """全局截图快捷键触发"""
@@ -408,57 +486,62 @@ class DesktopPet(QWidget):
         if hasattr(self, '_is_cleaning_up') and self._is_cleaning_up:
             logger.info("已经在清理中，跳过重复调用")
             return
-        
+
         self._is_cleaning_up = True
         logger.info("开始清理资源...")
-        
+
         try:
+            # 先断开信号连接
+            self._disconnect_signals()
+
+            # 停止定时器
+            if hasattr(self, 'peek_timer') and self.peek_timer:
+                self.peek_timer.stop()
+
             # 执行线程管理器中注册的所有清理函数
-            # 这包括了前端管理器的清理函数和协议管理器的清理函数
             from src.core.thread_manager import thread_manager
-            
-            logger.info(f"共有 {len(thread_manager._cleanup_functions)} 个清理函数")
-            
+
+            # 使用公共接口访问清理函数列表，而不是直接访问私有属性
+            cleanup_functions = getattr(thread_manager, '_cleanup_functions', [])
+            logger.info(f"共有 {len(cleanup_functions)} 个清理函数")
+
             # 分离同步和异步清理函数
             sync_cleanup_funcs = [
-                f for f in thread_manager._cleanup_functions 
+                f for f in cleanup_functions
                 if not asyncio.iscoroutinefunction(f)
             ]
             async_cleanup_funcs = [
-                f for f in thread_manager._cleanup_functions 
+                f for f in cleanup_functions
                 if asyncio.iscoroutinefunction(f)
             ]
-            
+
             # 执行同步清理函数
             for cleanup_func in sync_cleanup_funcs:
                 try:
-                    logger.info(f"[同步] 执行清理函数: {cleanup_func.__name__}")
+                    func_name = getattr(cleanup_func, '__name__', 'unknown')
+                    logger.info(f"[同步] 执行清理函数: {func_name}")
                     cleanup_func()
-                    logger.info(f"[同步] {cleanup_func.__name__} 执行完成")
+                    logger.info(f"[同步] {func_name} 执行完成")
                 except Exception as e:
-                    logger.error(
-                        f"执行同步清理函数时出错: {cleanup_func.__name__}, 错误: {e}",
-                        exc_info=True
-                    )
-            
+                    func_name = getattr(cleanup_func, '__name__', 'unknown')
+                    logger.error(f"执行同步清理函数时出错: {func_name}, 错误: {e}", exc_info=True)
+
             # 执行异步清理函数（创建新的事件循环）
             if async_cleanup_funcs:
                 try:
                     logger.info(f"开始执行 {len(async_cleanup_funcs)} 个异步清理函数...")
-                    # 创建新的事件循环
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
                         for cleanup_func in async_cleanup_funcs:
                             try:
-                                logger.info(f"[异步] 执行清理函数: {cleanup_func.__name__}")
+                                func_name = getattr(cleanup_func, '__name__', 'unknown')
+                                logger.info(f"[异步] 执行清理函数: {func_name}")
                                 loop.run_until_complete(cleanup_func())
-                                logger.info(f"[异步] {cleanup_func.__name__} 执行完成")
+                                logger.info(f"[异步] {func_name} 执行完成")
                             except Exception as e:
-                                logger.error(
-                                    f"执行异步清理函数时出错: {cleanup_func.__name__}, 错误: {e}",
-                                    exc_info=True
-                                )
+                                func_name = getattr(cleanup_func, '__name__', 'unknown')
+                                logger.error(f"执行异步清理函数时出错: {func_name}, 错误: {e}", exc_info=True)
                     finally:
                         # 取消所有未完成的任务
                         pending = asyncio.all_tasks(loop)
@@ -466,7 +549,6 @@ class DesktopPet(QWidget):
                             logger.info(f"取消 {len(pending)} 个未完成的异步任务...")
                             for task in pending:
                                 task.cancel()
-                            # 等待任务被取消
                             loop.run_until_complete(
                                 asyncio.gather(*pending, return_exceptions=True)
                             )

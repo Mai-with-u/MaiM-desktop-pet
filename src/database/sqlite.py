@@ -17,44 +17,63 @@ if TYPE_CHECKING:
 
 class SQLiteDatabase(BaseDatabase):
     """SQLite 数据库实现类"""
-    
+
     def __init__(self, path: str):
         """
         初始化 SQLite 数据库
-        
+
         Args:
             path: 数据库文件路径
         """
         self.db_path = path
         self.connection = None
-        
+
+    def _ensure_connection(self) -> bool:
+        """检查数据库连接是否有效"""
+        if self.connection is None:
+            logger.error("数据库连接未建立或已断开")
+            return False
+        return True
+
     async def connect(self) -> bool:
         """连接到 SQLite 数据库"""
         try:
-            # 确保目录存在
-            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-            
+            # 确保目录存在（处理相对路径情况）
+            dir_path = os.path.dirname(self.db_path)
+            if dir_path:  # 只有当 dir_path 不为空时才创建目录
+                os.makedirs(dir_path, exist_ok=True)
+
             # 使用 aiosqlite 进行异步连接
             self.connection = await aiosqlite.connect(self.db_path)
+
+            # 启用外键约束
+            await self.connection.execute('PRAGMA foreign_keys = ON')
+
             logger.info(f"成功连接到 SQLite 数据库: {self.db_path}")
             return True
         except Exception as e:
-            logger.error(f"连接 SQLite 数据库失败: {e}")
+            logger.error(f"连接 SQLite 数据库失败: {e}", exc_info=True)
+            self.connection = None
             return False
-    
+
     async def disconnect(self) -> bool:
         """断开数据库连接"""
         try:
             if self.connection:
                 await self.connection.close()
+                self.connection = None  # 清除引用
                 logger.info("成功断开 SQLite 数据库连接")
             return True
         except Exception as e:
-            logger.error(f"断开 SQLite 数据库连接失败: {e}")
+            logger.error(f"断开 SQLite 数据库连接失败: {e}", exc_info=True)
+            self.connection = None
             return False
-    
+
     async def initialize_tables(self) -> bool:
         """初始化数据库表结构"""
+        if not self._ensure_connection():
+            return False
+
         try:
             # 创建消息表
             await self.connection.execute('''
@@ -71,51 +90,54 @@ class SQLiteDatabase(BaseDatabase):
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
+
             # 创建索引以提高查询性能
             await self.connection.execute('''
-                CREATE INDEX IF NOT EXISTS idx_timestamp 
+                CREATE INDEX IF NOT EXISTS idx_timestamp
                 ON messages(timestamp DESC)
             ''')
-            
+
             await self.connection.execute('''
-                CREATE INDEX IF NOT EXISTS idx_user_id 
+                CREATE INDEX IF NOT EXISTS idx_user_id
                 ON messages(user_id)
             ''')
-            
+
             await self.connection.execute('''
-                CREATE INDEX IF NOT EXISTS idx_message_type 
+                CREATE INDEX IF NOT EXISTS idx_message_type
                 ON messages(message_type)
             ''')
-            
+
             await self.connection.commit()
             logger.info("成功初始化 SQLite 数据库表结构")
             return True
         except Exception as e:
-            logger.error(f"初始化 SQLite 数据库表失败: {e}")
+            logger.error(f"初始化 SQLite 数据库表失败: {e}", exc_info=True)
             return False
     
     async def save_message(self, message: 'MessageBase' | Dict[str, Any]) -> bool:
         """
         保存消息到数据库
-        
+
         Args:
             message: 消息对象（MessageBase）或消息字典
-            
+
         Returns:
             bool: 是否保存成功
         """
+        if not self._ensure_connection():
+            return False
+
         try:
             # 如果是 MessageBase 对象，转换为字典
             if hasattr(message, 'to_dict'):
                 message_dict = message.to_dict()
             else:
                 message_dict = message
-            
+
             message_info = message_dict.get('message_info', {})
             user_info = message_info.get('user_info', {})
             message_segment = message_dict.get('message_segment', {})
-            
+
             await self.connection.execute('''
                 INSERT OR REPLACE INTO messages (
                     id, platform, user_id, user_nickname, user_cardname,
@@ -129,169 +151,197 @@ class SQLiteDatabase(BaseDatabase):
                 user_info.get('user_cardname', ''),
                 message_segment.get('type', ''),
                 json.dumps(message_segment.get('data', ''), ensure_ascii=False),
-                message_dict.get('raw_message', ''),  # 修复：使用 message_dict 而不是 message
+                message_dict.get('raw_message', ''),
                 message_info.get('time', 0)
             ))
-            
+
             await self.connection.commit()
             logger.debug(f"成功保存消息: {message_info.get('message_id', '')}")
             return True
         except Exception as e:
-            logger.error(f"保存消息失败: {e}")
+            logger.error(f"保存消息失败: {e}", exc_info=True)
             return False
-    
+
     async def get_messages(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         """
         获取消息历史记录
-        
+
         Args:
             limit: 返回消息数量限制
             offset: 偏移量
-            
+
         Returns:
             List[Dict]: 消息列表
         """
+        if not self._ensure_connection():
+            return []
+
         try:
             cursor = await self.connection.execute('''
-                SELECT * FROM messages 
-                ORDER BY timestamp DESC 
+                SELECT * FROM messages
+                ORDER BY timestamp DESC
                 LIMIT ? OFFSET ?
             ''', (limit, offset))
-            
+
             rows = await cursor.fetchall()
             columns = [description[0] for description in cursor.description]
-            
+
             messages = []
             for row in rows:
                 message = dict(zip(columns, row))
                 # 解析 JSON 字段
                 try:
-                    message['message_content'] = json.loads(message['message_content'])
-                except:
-                    pass
+                    if message.get('message_content'):
+                        message['message_content'] = json.loads(message['message_content'])
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.debug(f"JSON 解析失败，保留原值: {e}")
                 messages.append(message)
-            
+
             return messages
         except Exception as e:
-            logger.error(f"获取消息失败: {e}")
+            logger.error(f"获取消息失败: {e}", exc_info=True)
             return []
     
     async def get_message_by_id(self, message_id: str) -> Optional[Dict[str, Any]]:
         """
         根据ID获取单条消息
-        
+
         Args:
             message_id: 消息ID
-            
+
         Returns:
             Optional[Dict]: 消息字典，如果不存在返回 None
         """
+        if not self._ensure_connection():
+            return None
+
         try:
             cursor = await self.connection.execute('''
                 SELECT * FROM messages WHERE id = ?
             ''', (message_id,))
-            
+
             row = await cursor.fetchone()
             if row:
                 columns = [description[0] for description in cursor.description]
                 message = dict(zip(columns, row))
                 # 解析 JSON 字段
                 try:
-                    message['message_content'] = json.loads(message['message_content'])
-                except:
-                    pass
+                    if message.get('message_content'):
+                        message['message_content'] = json.loads(message['message_content'])
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.debug(f"JSON 解析失败，保留原值: {e}")
                 return message
             return None
         except Exception as e:
-            logger.error(f"获取消息失败: {e}")
+            logger.error(f"获取消息失败: {e}", exc_info=True)
             return None
-    
+
     async def delete_message(self, message_id: str) -> bool:
         """
         删除指定ID的消息
-        
+
         Args:
             message_id: 消息ID
-            
+
         Returns:
             bool: 是否删除成功
         """
+        if not self._ensure_connection():
+            return False
+
         try:
             await self.connection.execute('''
                 DELETE FROM messages WHERE id = ?
             ''', (message_id,))
-            
+
             await self.connection.commit()
             logger.info(f"成功删除消息: {message_id}")
             return True
         except Exception as e:
-            logger.error(f"删除消息失败: {e}")
+            logger.error(f"删除消息失败: {e}", exc_info=True)
             return False
-    
+
     async def clear_all_messages(self) -> bool:
         """
         清空所有消息记录
-        
+
         Returns:
             bool: 是否清空成功
         """
+        if not self._ensure_connection():
+            return False
+
         try:
             await self.connection.execute('DELETE FROM messages')
             await self.connection.commit()
             logger.info("成功清空所有消息记录")
             return True
         except Exception as e:
-            logger.error(f"清空消息记录失败: {e}")
+            logger.error(f"清空消息记录失败: {e}", exc_info=True)
             return False
-    
+
     async def get_message_count(self) -> int:
         """
         获取消息总数
-        
+
         Returns:
             int: 消息总数
         """
+        if not self._ensure_connection():
+            return 0
+
         try:
             cursor = await self.connection.execute('SELECT COUNT(*) FROM messages')
             result = await cursor.fetchone()
             return result[0] if result else 0
         except Exception as e:
-            logger.error(f"获取消息总数失败: {e}")
+            logger.error(f"获取消息总数失败: {e}", exc_info=True)
             return 0
-    
+
     async def search_messages(self, keyword: str, limit: int = 100) -> List[Dict[str, Any]]:
         """
         搜索包含关键词的消息
-        
+
         Args:
             keyword: 搜索关键词
             limit: 返回结果数量限制
-            
+
         Returns:
             List[Dict]: 匹配的消息列表
         """
+        if not self._ensure_connection():
+            return []
+
+        if not keyword:
+            logger.warning("搜索关键词为空")
+            return []
+
         try:
+            # 转义 LIKE 通配符，防止意外匹配
+            escaped_keyword = keyword.replace('%', '\\%').replace('_', '\\_')
+
             cursor = await self.connection.execute('''
-                SELECT * FROM messages 
-                WHERE message_content LIKE ? OR raw_message LIKE ?
-                ORDER BY timestamp DESC 
+                SELECT * FROM messages
+                WHERE message_content LIKE ? ESCAPE '\\' OR raw_message LIKE ? ESCAPE '\\'
+                ORDER BY timestamp DESC
                 LIMIT ?
-            ''', (f'%{keyword}%', f'%{keyword}%', limit))
-            
+            ''', (f'%{escaped_keyword}%', f'%{escaped_keyword}%', limit))
+
             rows = await cursor.fetchall()
             columns = [description[0] for description in cursor.description]
-            
+
             messages = []
             for row in rows:
                 message = dict(zip(columns, row))
                 # 解析 JSON 字段
                 try:
-                    message['message_content'] = json.loads(message['message_content'])
-                except:
-                    pass
+                    if message.get('message_content'):
+                        message['message_content'] = json.loads(message['message_content'])
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.debug(f"JSON 解析失败，保留原值: {e}")
                 messages.append(message)
-            
+
             return messages
         except Exception as e:
-            logger.error(f"搜索消息失败: {e}")
+            logger.error(f"搜索消息失败: {e}", exc_info=True)
             return []

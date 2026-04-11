@@ -24,23 +24,34 @@ class ModelManager:
     async def initialize(self) -> bool:
         """
         初始化模型管理器
-        
+
         Returns:
             是否初始化成功
         """
         try:
             # 加载配置
             self._config = load_model_config()
+            if not self._config:
+                logger.error("模型配置加载失败，返回 None")
+                return False
+
+            # 验证配置结构
+            if not hasattr(self._config, 'api_providers') or not hasattr(self._config, 'models'):
+                logger.error("模型配置结构不完整")
+                return False
+
             self._initialized = True
-            
+
             logger.info(f"模型管理器初始化成功")
             logger.info(f"  - 供应商数量: {len(self._config.api_providers)}")
             logger.info(f"  - 模型数量: {len(self._config.models)}")
-            
+
             return True
-            
+
         except Exception as e:
             logger.error(f"模型管理器初始化失败: {e}", exc_info=True)
+            self._config = None
+            self._initialized = False
             return False
     
     # ===================================================================
@@ -151,12 +162,12 @@ class ModelManager:
     def get_model_connection_info(self, model_name: str) -> Optional[Dict[str, Any]]:
         """
         根据模型名称获取连接信息（base_url, api_key, client_type）
-        
+
         这是协议管理器需要的关键方法
-        
+
         Args:
             model_name: 模型名称
-        
+
         Returns:
             连接信息字典，包含：
             - base_url: API 地址
@@ -167,30 +178,38 @@ class ModelManager:
             - timeout: 超时时间
             - retry_interval: 重试间隔
         """
-        if not self._initialized:
+        if not self._initialized or not self._config:
+            logger.warning("模型管理器未初始化或配置无效")
             return None
-        
+
         # 1. 查找模型配置
         model_config = self.get_model_config(model_name)
         if not model_config:
+            logger.warning(f"模型 '{model_name}' 未找到")
             return None
-        
-        # 2. 查找供应商配置
-        provider_config = self.get_provider_config(model_config.api_provider)
+
+        # 2. 查找供应商配置（检查 api_provider 是否有效）
+        api_provider = getattr(model_config, 'api_provider', None)
+        if not api_provider:
+            logger.warning(f"模型 '{model_name}' 缺少 api_provider 配置")
+            return None
+
+        provider_config = self.get_provider_config(api_provider)
         if not provider_config:
+            logger.warning(f"模型 '{model_name}' 的供应商 '{api_provider}' 未找到")
             return None
-        
-        # 3. 组合返回信息
+
+        # 3. 组合返回信息（使用 .get() 防御性访问）
         return {
-            'base_url': provider_config.base_url,
-            'api_key': provider_config.api_key,
-            'client_type': provider_config.client_type,
-            'model_identifier': model_config.model_identifier,
-            'model_name': model_config.name,
-            'provider_name': provider_config.name,
-            'max_retry': provider_config.max_retry,
-            'timeout': provider_config.timeout,
-            'retry_interval': provider_config.retry_interval,
+            'base_url': getattr(provider_config, 'base_url', ''),
+            'api_key': getattr(provider_config, 'api_key', ''),
+            'client_type': getattr(provider_config, 'client_type', 'openai'),
+            'model_identifier': getattr(model_config, 'model_identifier', model_name),
+            'model_name': model_name,
+            'provider_name': getattr(provider_config, 'name', ''),
+            'max_retry': getattr(provider_config, 'max_retry', 3),
+            'timeout': getattr(provider_config, 'timeout', 30),
+            'retry_interval': getattr(provider_config, 'retry_interval', 1),
         }
     
     def get_task_connection_info(self, task_type: str, model_index: int = 0) -> Optional[Dict[str, Any]]:

@@ -33,6 +33,18 @@ except ImportError:
     FormatInfo = None
 
 
+def _safe_emit_signal(signal_bus, signal_name: str, *args):
+    """安全地发送信号，处理导入失败和信号不存在的情况"""
+    try:
+        if signal_bus is None:
+            return
+        signal = getattr(signal_bus, signal_name, None)
+        if signal is not None and hasattr(signal, 'emit'):
+            signal.emit(*args)
+    except Exception as e:
+        logger.error(f"发送信号失败: {signal_name}, 错误: {e}")
+
+
 class ChatManager:
     """聊天管理器"""
     
@@ -69,15 +81,18 @@ class ChatManager:
             if not connection_info:
                 logger.error(f"无法获取任务 '{task_type}' 的连接信息")
                 return False
-            
+
             # 3. 根据协议类型初始化客户端
-            protocol_type = connection_info['protocol_type']
-            
+            protocol_type = connection_info.get('protocol_type')
+            if not protocol_type:
+                logger.error("连接信息中缺少 protocol_type")
+                return False
+
             # 协议选择日志
             logger.info("=" * 60)
             logger.info(f"协议选择: {protocol_type}")
-            logger.info(f"  模型: {connection_info.get('model_name')}")
-            logger.info(f"  供应商: {connection_info.get('provider_name')}")
+            logger.info(f"  模型: {connection_info.get('model_name', '未知')}")
+            logger.info(f"  供应商: {connection_info.get('provider_name', '未知')}")
             logger.info("=" * 60)
             
             if protocol_type == 'maim':
@@ -136,7 +151,11 @@ class ChatManager:
 
         try:
             # 获取连接配置
-            ws_url = connection_info['base_url']
+            ws_url = connection_info.get('base_url')
+            if not ws_url:
+                logger.error("连接信息中缺少 base_url")
+                return False
+
             platform = connection_info.get('platform', 'desktop-pet')
             api_key = connection_info.get('api_key', '')
 
@@ -153,6 +172,10 @@ class ChatManager:
             # 注册消息处理器（接收回复）
             self._maim_router.register_message_handler(self._handle_maim_message)
 
+            # 线程启动状态跟踪
+            self._maim_startup_error = None
+            self._maim_startup_success = False
+
             # 在后台线程中启动 Router（run() 是阻塞方法）
             def run_router():
                 """在后台线程中运行 Router"""
@@ -160,22 +183,30 @@ class ChatManager:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     loop.run_until_complete(self._maim_router.run())
+                    self._maim_startup_success = True
                 except Exception as e:
+                    self._maim_startup_error = str(e)
                     logger.error(f"Router 运行失败: {e}", exc_info=True)
 
             self._maim_thread = threading.Thread(target=run_router, daemon=True, name="MaimRouter")
             self._maim_thread.start()
 
-            # 等待连接建立
-            import time
+            # 等待连接建立（使用 asyncio.sleep 保持异步特性）
             max_wait = 5  # 最多等待 5 秒
             for i in range(max_wait * 10):
+                if self._maim_startup_error:
+                    logger.error(f"Maim WebSocket 启动失败: {self._maim_startup_error}")
+                    return False
                 if self._maim_router.check_connection(platform):
                     logger.info("Maim WebSocket 连接已建立")
                     logger.info(f"  - 平台: {platform}")
                     logger.info(f"  - 地址: {ws_url}")
                     return True
-                time.sleep(0.1)
+                await asyncio.sleep(0.1)
+
+            if self._maim_startup_error:
+                logger.error(f"Maim WebSocket 启动失败: {self._maim_startup_error}")
+                return False
 
             logger.warning("Maim WebSocket 连接建立超时")
             return False
@@ -275,15 +306,29 @@ class ChatManager:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=data, headers=headers) as response:
                     if response.status == 200:
-                        result = await response.json()
-                        reply = result['choices'][0]['message']['content']
+                        try:
+                            result = await response.json()
+                            # 防御性检查 API 响应格式
+                            choices = result.get('choices', [])
+                            if not choices:
+                                logger.error("HTTP 响应格式异常: choices 为空")
+                                return False
+                            first_choice = choices[0] if choices else {}
+                            message = first_choice.get('message', {})
+                            reply = message.get('content', '')
+                            if not reply:
+                                logger.warning("HTTP 响应中 content 为空")
+                                reply = "[空响应]"
+                        except Exception as parse_error:
+                            logger.error(f"解析 HTTP 响应失败: {parse_error}")
+                            return False
 
                         # HTTP 接收日志
                         logger.info(f"[HTTP接收] {reply[:50]}")
 
-                        # 触发 UI 信号
+                        # 触发 UI 信号（安全发送）
                         from src.frontend.signals import signals_bus
-                        signals_bus.message_received.emit(reply)
+                        _safe_emit_signal(signals_bus, 'message_received', reply)
 
                         return True
                     else:
@@ -331,9 +376,9 @@ class ChatManager:
 
             logger.info(f"[接收消息] {seg_type} | {reply_content[:50]}")
 
-            # 触发 UI 信号
+            # 触发 UI 信号（安全发送）
             from src.frontend.signals import signals_bus
-            signals_bus.message_received.emit(reply_content)
+            _safe_emit_signal(signals_bus, 'message_received', reply_content)
 
         except Exception as e:
             logger.error(f"处理 Maim 消息失败: {e}", exc_info=True)
@@ -352,16 +397,27 @@ class ChatManager:
             是否发送成功
         """
         if not self._maim_router or not self._maim_platform:
-            logger.warning("Maim WebSocket 未初始化")
+            logger.warning("Maim WebSocket 未初始化或已失效")
+            return False
+
+        if not MAIM_MESSAGE_AVAILABLE:
+            logger.error("maim_message 库未安装，无法发送 Maim 消息")
             return False
 
         try:
             # 从主配置读取平台标识和用户名
             from config import load_config
             main_config = load_config()
-            platform = main_config.platform
-            # 优先使用 userNickname，如果为空则使用 Nickname
-            actual_user_name = main_config.userNickname if main_config.userNickname else main_config.Nickname
+            if not main_config:
+                logger.warning("主配置加载失败，使用默认值")
+                platform = 'desktop-pet'
+                actual_user_name = user_name
+            else:
+                platform = getattr(main_config, 'platform', 'desktop-pet')
+                # 优先使用 userNickname，如果为空则使用 Nickname
+                userNickname = getattr(main_config, 'userNickname', None)
+                Nickname = getattr(main_config, 'Nickname', None)
+                actual_user_name = userNickname if userNickname else (Nickname if Nickname else user_name)
 
             # 构建 UserInfo
             user_info = UserInfo(
@@ -508,34 +564,43 @@ class ChatManager:
             return False
     
     async def _send_vision_request(
-        self, 
-        prompt: str, 
-        image_base64: str, 
+        self,
+        prompt: str,
+        image_base64: str,
         connection_info: Dict[str, Any],
         task_type: str,
         callback=None
     ) -> bool:
         """
         发送视觉请求（Vision API）
-        
+
         Args:
             prompt: 提示词
             image_base64: 图片 base64
             connection_info: 连接信息
             task_type: 任务类型
             callback: 回调函数
-        
+
         Returns:
             是否发送成功
         """
+        # Vision 请求需要更长的超时时间（处理图片耗时）
+        vision_timeout = connection_info.get('timeout', 60)  # 默认 60 秒
+
         try:
-            url = f"{connection_info['base_url']}/chat/completions"
-            
+            url = f"{connection_info.get('base_url', '')}/chat/completions"
+            if not url:
+                logger.error("Vision 请求缺少 base_url")
+                if callback:
+                    callback(False, task_type, None)
+                return False
+
+            api_key = connection_info.get('api_key', '')
             headers = {
-                "Authorization": f"Bearer {connection_info['api_key']}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             }
-            
+
             # 构建 Vision API 格式的消息
             messages = [
                 {
@@ -554,44 +619,67 @@ class ChatManager:
                     ]
                 }
             ]
-            
+
+            model_identifier = connection_info.get('model_identifier', '')
+            if not model_identifier:
+                logger.error("Vision 请求缺少 model_identifier")
+                if callback:
+                    callback(False, task_type, None)
+                return False
+
             # 构建请求数据
             data = {
-                "model": connection_info['model_identifier'],
+                "model": model_identifier,
                 "messages": messages,
                 "stream": False
             }
-            
+
             # Vision 发送日志
-            logger.info(f"[Vision发送] {connection_info['base_url']}")
-            logger.info(f"  模型: {connection_info['model_identifier']}")
+            logger.info(f"[Vision发送] {connection_info.get('base_url', '')}")
+            logger.info(f"  模型: {model_identifier}")
             logger.info(f"  任务: {task_type}")
-            
-            # Vision 请求需要更长的超时时间（处理图片耗时）
-            vision_timeout = connection_info.get('timeout', 60)  # 默认 60 秒
+
             timeout = aiohttp.ClientTimeout(total=vision_timeout)
             
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=data, headers=headers) as response:
                     if response.status == 200:
-                        result = await response.json()
-                        reply = result['choices'][0]['message']['content']
-                        
+                        try:
+                            result = await response.json()
+                            # 防御性检查 API 响应格式
+                            choices = result.get('choices', [])
+                            if not choices:
+                                logger.error("Vision 响应格式异常: choices 为空")
+                                if callback:
+                                    callback(False, task_type, None)
+                                return False
+                            first_choice = choices[0] if choices else {}
+                            message = first_choice.get('message', {})
+                            reply = message.get('content', '')
+                            if not reply:
+                                logger.warning("Vision 响应中 content 为空")
+                                reply = "[空响应]"
+                        except Exception as parse_error:
+                            logger.error(f"解析 Vision 响应失败: {parse_error}")
+                            if callback:
+                                callback(False, task_type, None)
+                            return False
+
                         # Vision 接收日志
                         logger.info(f"[Vision接收] {reply[:50]}")
-                        
+
                         # 调用回调函数
                         if callback:
                             callback(True, task_type, reply)
-                        
+
                         return True
                     else:
                         error = await response.text()
                         logger.error(f"Vision 请求失败: {response.status} - {error}")
-                        
+
                         if callback:
                             callback(False, task_type, None)
-                        
+
                         return False
         
         except asyncio.TimeoutError:

@@ -3,6 +3,7 @@
 提供统一的数据库访问接口和管理功能
 """
 
+import threading
 from typing import Optional, List, Dict, Any
 from .base import BaseDatabase
 from .factory import DatabaseFactory
@@ -11,68 +12,104 @@ from src.util.logger import logger
 
 class DatabaseManager:
     """数据库管理器单例类"""
-    
+
     _instance = None
     _database: Optional[BaseDatabase] = None
-    
+    _lock = threading.Lock()  # 线程安全锁
+    _initialized_flag = False  # 初始化标记
+
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
+            with cls._lock:
+                if cls._instance is None:  # 双重检查锁定
+                    cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     async def initialize(self, db_type: str, **kwargs) -> bool:
         """
         初始化数据库连接
-        
+
         Args:
             db_type: 数据库类型
             **kwargs: 数据库配置参数
-            
+
         Returns:
             bool: 是否初始化成功
         """
-        try:
-            # 创建数据库实例
-            self._database = DatabaseFactory.create_database(db_type, **kwargs)
-            
-            # 连接数据库
-            if not await self._database.connect():
-                logger.error("数据库连接失败")
+        with self._lock:
+            try:
+                # 如果已初始化，先清理旧连接
+                if self._database is not None:
+                    try:
+                        await self._database.disconnect()
+                    except Exception as e:
+                        logger.warning(f"清理旧数据库连接失败: {e}")
+                    self._database = None
+
+                # 创建数据库实例
+                self._database = DatabaseFactory.create_database(db_type, **kwargs)
+
+                if self._database is None:
+                    logger.error("数据库实例创建失败")
+                    return False
+
+                # 连接数据库
+                if not await self._database.connect():
+                    logger.error("数据库连接失败")
+                    self._database = None
+                    return False
+
+                # 初始化表结构
+                if not await self._database.initialize_tables():
+                    logger.error("数据库表初始化失败")
+                    # 表初始化失败时断开连接
+                    try:
+                        await self._database.disconnect()
+                    except Exception:
+                        pass
+                    self._database = None
+                    return False
+
+                self._initialized_flag = True
+                logger.info("数据库管理器初始化成功")
+                return True
+            except Exception as e:
+                logger.error(f"数据库管理器初始化失败: {e}", exc_info=True)
+                self._database = None
                 return False
-            
-            # 初始化表结构
-            if not await self._database.initialize_tables():
-                logger.error("数据库表初始化失败")
-                return False
-            
-            logger.info("数据库管理器初始化成功")
-            return True
-        except Exception as e:
-            logger.error(f"数据库管理器初始化失败: {e}")
-            self._database = None
-            return False
-    
+
     async def close(self) -> bool:
         """
         关闭数据库连接
-        
+
         Returns:
             bool: 是否关闭成功
         """
-        if self._database:
-            result = await self._database.disconnect()
-            self._database = None
-            return result
-        return True
-    
+        with self._lock:
+            if self._database:
+                result = await self._database.disconnect()
+                self._database = None
+                self._initialized_flag = False
+                return result
+            return True
+
+    async def reset(self) -> bool:
+        """
+        重置数据库管理器（允许重新初始化）
+
+        Returns:
+            bool: 是否重置成功
+        """
+        return await self.close()
+
     def is_initialized(self) -> bool:
         """
         检查数据库是否已初始化
-        
+
         Returns:
             bool: 是否已初始化
         """
-        return self._database is not None
+        return self._database is not None and self._initialized_flag
     
     async def save_message(self, message: Dict[str, Any]) -> bool:
         """
