@@ -4,16 +4,16 @@
 """
 
 import asyncio
+from pathlib import Path
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLineEdit,
                               QPushButton, QScrollArea, QLabel, QApplication)
-from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QFont, QIcon, QCursor
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont, QCursor
 
 from src.frontend.chat_bubble import ChatBubbleList
 from src.frontend.signals import signals_bus
 from src.core.chat import chat_manager
 from src.database import db_manager
-from src.shared.models.message import MessageBase
 from src.util.logger import logger
 from config import load_config, get_scale_factor
 
@@ -30,6 +30,7 @@ class ChatWindow(QWidget):
         super().__init__(parent)
         self.pet_window = pet_window  # 桌宠主窗口引用
         self._history_loaded = False  # 历史消息加载标记
+        self._history_loading = False  # 历史消息加载中标记
 
         # 窗口设置
         self.init_window()
@@ -161,7 +162,8 @@ class ChatWindow(QWidget):
     def _load_style(self):
         """加载样式表"""
         try:
-            with open('src/frontend/style_sheets/chat_window.css', 'r', encoding='utf-8') as f:
+            style_path = Path(__file__).resolve().parent / "style_sheets" / "chat_window.css"
+            with style_path.open('r', encoding='utf-8') as f:
                 self.setStyleSheet(f.read())
         except FileNotFoundError:
             logger.warning("样式表文件未找到，使用默认样式")
@@ -222,7 +224,13 @@ class ChatWindow(QWidget):
 
     def _on_message_received(self, text: str):
         """接收到新消息"""
-        self.bubble_list.add_message(text=text, msg_type="received")
+        self.add_message(text=text, msg_type="received")
+
+    def add_message(self, text: str, msg_type: str = "received"):
+        """向聊天窗口添加一条消息。"""
+        if not text:
+            return
+        self.bubble_list.add_message(text=text, msg_type=msg_type)
         self._scroll_to_bottom()
 
     def _send_message(self):
@@ -232,12 +240,19 @@ class ChatWindow(QWidget):
             return
 
         # 显示发送的消息
-        self.bubble_list.add_message(text=text, msg_type="sent")
+        self.add_message(text=text, msg_type="sent")
         self.input_field.clear()
-        self._scroll_to_bottom()
 
         # 发送消息到聊天管理器
-        asyncio.create_task(chat_manager.send_message(text))
+        task = asyncio.create_task(chat_manager.send_message(text))
+        task.add_done_callback(self._on_send_finished)
+
+    def _on_send_finished(self, task: asyncio.Task):
+        """记录聊天窗口发送任务的异常。"""
+        try:
+            task.result()
+        except Exception as e:
+            logger.error(f"聊天窗口发送消息失败: {e}", exc_info=True)
 
     def _scroll_to_bottom(self):
         """滚动到底部"""
@@ -249,31 +264,46 @@ class ChatWindow(QWidget):
         """加载历史消息"""
         if not db_manager.is_initialized():
             logger.warning("数据库未初始化，无法加载历史消息")
-            return
+            return False
 
         try:
             messages = await db_manager.get_messages(limit=50)
             messages = list(reversed(messages))  # 从旧到新
 
             for msg_dict in messages:
-                message_obj = MessageBase.from_dict(msg_dict)
+                # 数据库返回的是扁平格式，直接提取字段
+                # 不需要使用 MessageBase.from_dict
+                user_id = msg_dict.get('user_id', '1')
+                message_content = msg_dict.get('message_content', '')
+
+                # 解析 message_content（可能是 JSON）
+                import json
+                try:
+                    if message_content:
+                        message_content = json.loads(message_content)
+                    else:
+                        message_content = ''
+                except (json.JSONDecodeError, TypeError):
+                    pass  # 保持原值
 
                 # 判断消息类型：user_id 为 "0" 表示发送
-                if message_obj.user_id == "0":
+                if user_id == "0":
                     msg_type = "sent"
                 else:
                     msg_type = "received"
 
-                self.bubble_list.add_message(
-                    text=message_obj.message_content,
-                    msg_type=msg_type
-                )
+                # 转换为字符串显示
+                text = str(message_content) if message_content else ''
+                if text:
+                    self.bubble_list.add_message(text=text, msg_type=msg_type)
 
             self._scroll_to_bottom()
             logger.info(f"已加载 {len(messages)} 条历史消息")
+            return True
 
         except Exception as e:
-            logger.error(f"加载历史消息失败: {e}")
+            logger.error(f"加载历史消息失败: {e}", exc_info=True)
+            return False
 
     def show_window(self):
         """显示窗口"""
@@ -310,10 +340,46 @@ class ChatWindow(QWidget):
             if not self._history_loaded:
                 self._start_load_history()
 
+    def _set_chat_window_mode(self, active: bool):
+        """通知桌宠当前是否由聊天窗口独占对话展示。"""
+        if self.pet_window and hasattr(self.pet_window, "set_chat_window_active"):
+            self.pet_window.set_chat_window_active(active)
+
+    def showEvent(self, event):
+        """窗口显示时进入聊天窗口模式。"""
+        super().showEvent(event)
+        self._set_chat_window_mode(True)
+
+    def hideEvent(self, event):
+        """窗口隐藏时恢复桌宠气泡模式。"""
+        self._set_chat_window_mode(False)
+        super().hideEvent(event)
+
     def _start_load_history(self):
-        """启动历史消息加载（同步包装器）"""
-        self._history_loaded = True
-        asyncio.create_task(self._load_history())
+        """启动历史消息加载"""
+        if self._history_loading:
+            return
+        self._history_loading = True
+        # 使用 QTimer 确保 async task 在正确的事件循环上下文中执行
+        QTimer.singleShot(100, self._do_load_history)
+
+    def _do_load_history(self):
+        """实际执行历史消息加载"""
+        try:
+            task = asyncio.create_task(self._load_history())
+            task.add_done_callback(self._on_history_loaded)
+        except RuntimeError as e:
+            self._history_loading = False
+            logger.error(f"启动历史消息加载失败: {e}", exc_info=True)
+
+    def _on_history_loaded(self, task: asyncio.Task):
+        """历史加载完成后更新状态。"""
+        self._history_loading = False
+        try:
+            self._history_loaded = bool(task.result())
+        except Exception as e:
+            self._history_loaded = False
+            logger.error(f"历史消息加载任务异常: {e}", exc_info=True)
 
     def _on_close_clicked(self):
         """点击关闭按钮时隐藏窗口"""
@@ -331,6 +397,8 @@ class ChatWindow(QWidget):
         """获取单例实例"""
         if cls._instance is None:
             cls._instance = cls(parent, pet_window)
+        elif pet_window is not None:
+            cls._instance.pet_window = pet_window
         return cls._instance
 
     @classmethod
@@ -338,3 +406,9 @@ class ChatWindow(QWidget):
         """显示聊天窗口（便捷方法）"""
         instance = cls.get_instance(parent, pet_window)
         instance.show_window()
+        return instance
+
+    @classmethod
+    def is_active(cls) -> bool:
+        """聊天窗口当前是否正在作为主对话界面。"""
+        return bool(cls._instance and cls._instance.isVisible())

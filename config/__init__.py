@@ -14,6 +14,11 @@ from .loader import (
 
 from .schema import (
     Config,
+    RenderConfig,
+    AnimationConfig,
+    AnimationSchedulerConfig,
+    PerformanceConfig,
+    StateConfig,
     ModelConfigFile,
     APIProviderConfig,
     ModelConfig,
@@ -23,7 +28,12 @@ from .schema import (
 
 __all__ = [
     # 主配置
-    'Config', 
+    'Config',
+    'RenderConfig',
+    'AnimationConfig',
+    'AnimationSchedulerConfig',
+    'PerformanceConfig',
+    'StateConfig',
     'load_config', 
     'ensure_config_exists', 
     'get_scale_factor',

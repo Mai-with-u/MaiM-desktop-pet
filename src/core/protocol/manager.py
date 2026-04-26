@@ -8,7 +8,7 @@
 3. 如果是 maim (WebSocket)，初始化连接
 """
 
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from config import load_model_config
 from config.schema import ModelConfigFile, APIProviderConfig, ModelConfig, TaskConfig
 from src.util.logger import logger
@@ -20,8 +20,9 @@ class ProtocolManager:
     def __init__(self):
         self._config: Optional[ModelConfigFile] = None
         self._initialized = False
+        self._active_model_indices: Dict[str, int] = {}
     
-    async def initialize(self) -> bool:
+    async def initialize(self, force_reload: bool = False) -> bool:
         """
         初始化协议管理器
         
@@ -29,9 +30,17 @@ class ProtocolManager:
             是否初始化成功
         """
         try:
+            if self._initialized and self._config is not None and not force_reload:
+                return True
+
             # 加载配置
             self._config = load_model_config()
             self._initialized = True
+            self._active_model_indices = {
+                task_type: index
+                for task_type, index in self._active_model_indices.items()
+                if self._is_valid_task_model_index(task_type, index)
+            }
             
             logger.info("协议管理器初始化成功")
             logger.info(f"  - 供应商数量: {len(self._config.api_providers)}")
@@ -72,7 +81,7 @@ class ProtocolManager:
             return None
         
         # 3. 返回协议类型
-        return provider_config.client_type
+        return provider_config.client_type.lower()
     
     def get_connection_info(self, model_name: str, task_config: Optional[TaskConfig] = None) -> Optional[Dict[str, Any]]:
         """
@@ -112,7 +121,7 @@ class ProtocolManager:
         
         # 3. 组合连接信息
         connection_info = {
-            'protocol_type': provider_config.client_type,
+            'protocol_type': provider_config.client_type.lower(),
             'base_url': provider_config.base_url,
             'api_key': provider_config.api_key,
             'model_identifier': model_config.model_identifier,
@@ -121,15 +130,19 @@ class ProtocolManager:
             'max_retry': provider_config.max_retry,
             'timeout': provider_config.timeout,  # 默认使用供应商的 timeout
             'retry_interval': provider_config.retry_interval,
+            'extra_params': model_config.extra_params or {},
         }
         
         # 如果有任务配置且设置了 timeout，则覆盖供应商的 timeout
         if task_config and hasattr(task_config, 'timeout') and task_config.timeout:
             connection_info['timeout'] = task_config.timeout
             logger.debug(f"使用任务级超时: {task_config.timeout}秒")
+        if task_config:
+            connection_info['temperature'] = task_config.temperature
+            connection_info['max_tokens'] = task_config.max_tokens
 
         # 4. 如果是 maim 协议，添加 platform 信息
-        if provider_config.client_type == 'maim':
+        if provider_config.client_type.lower() == 'maim':
             # 从主配置获取 platform
             from config import load_config
             main_config = load_config()
@@ -139,13 +152,13 @@ class ProtocolManager:
         
         return connection_info
     
-    def get_task_connection_info(self, task_type: str, model_index: int = 0) -> Optional[Dict[str, Any]]:
+    def get_task_connection_info(self, task_type: str, model_index: Optional[int] = None) -> Optional[Dict[str, Any]]:
         """
         根据任务类型获取连接信息
         
         Args:
             task_type: 任务类型，如 'chat', 'image_recognition'
-            model_index: 使用模型列表中的第几个模型（默认第一个）
+            model_index: 使用模型列表中的第几个模型；None 表示使用当前激活模型
         
         Returns:
             连接信息字典
@@ -154,7 +167,7 @@ class ProtocolManager:
             return None
         
         # 1. 获取任务配置
-        task_config = getattr(self._config.model_task_config, task_type, None)
+        task_config = self._get_task_config(task_type)
         if not task_config:
             logger.warning(f"任务类型 '{task_type}' 未配置")
             return None
@@ -166,14 +179,82 @@ class ProtocolManager:
             return None
         
         # 3. 选择指定索引的模型
+        if model_index is None:
+            model_index = self._active_model_indices.get(task_type, 0)
+
         if model_index >= len(model_list):
             logger.warning(f"任务 '{task_type}' 的模型索引 {model_index} 超出范围，使用第一个模型")
+            model_index = 0
+        if model_index < 0:
+            logger.warning(f"任务 '{task_type}' 的模型索引 {model_index} 小于 0，使用第一个模型")
             model_index = 0
         
         model_name = model_list[model_index]
         
         # 4. 获取连接信息（传入 task_config 以支持任务级 timeout）
-        return self.get_connection_info(model_name, task_config)
+        connection_info = self.get_connection_info(model_name, task_config)
+        if connection_info is not None:
+            connection_info['task_type'] = task_type
+            connection_info['model_index'] = model_index
+            connection_info['candidate_count'] = len(model_list)
+        return connection_info
+
+    def get_task_model_names(self, task_type: str) -> List[str]:
+        """获取任务配置中的模型名称列表"""
+        if not self._initialized or not self._config:
+            return []
+
+        task_config = self._get_task_config(task_type)
+        if not task_config or not task_config.model_list:
+            return []
+        return list(task_config.model_list)
+
+    def get_task_connection_candidates(self, task_type: str) -> List[Dict[str, Any]]:
+        """获取任务的所有可用连接候选，顺序与 model_list 一致"""
+        candidates: List[Dict[str, Any]] = []
+        for index, _ in enumerate(self.get_task_model_names(task_type)):
+            connection_info = self.get_task_connection_info(task_type, index)
+            if connection_info:
+                candidates.append(connection_info)
+        return candidates
+
+    def get_active_model_index(self, task_type: str) -> int:
+        """获取任务当前激活模型索引"""
+        index = self._active_model_indices.get(task_type, 0)
+        if not self._is_valid_task_model_index(task_type, index):
+            return 0
+        return index
+
+    def set_active_task_model(self, task_type: str, model_index: int) -> bool:
+        """设置任务当前激活模型索引"""
+        if not self._is_valid_task_model_index(task_type, model_index):
+            logger.warning(f"任务 '{task_type}' 的模型索引无效: {model_index}")
+            return False
+
+        self._active_model_indices[task_type] = model_index
+        model_names = self.get_task_model_names(task_type)
+        logger.info(f"任务 '{task_type}' 已切换到模型[{model_index}]: {model_names[model_index]}")
+        return True
+
+    def set_active_task_model_by_name(self, task_type: str, model_name: str) -> bool:
+        """按模型名称设置任务当前激活模型"""
+        model_names = self.get_task_model_names(task_type)
+        if model_name not in model_names:
+            logger.warning(f"任务 '{task_type}' 未配置模型: {model_name}")
+            return False
+        return self.set_active_task_model(task_type, model_names.index(model_name))
+
+    def switch_task_to_next_model(self, task_type: str) -> Optional[Dict[str, Any]]:
+        """切换到任务的下一个模型，并返回新的连接信息"""
+        model_names = self.get_task_model_names(task_type)
+        if not model_names:
+            logger.warning(f"任务 '{task_type}' 没有可切换的模型")
+            return None
+
+        next_index = (self.get_active_model_index(task_type) + 1) % len(model_names)
+        if not self.set_active_task_model(task_type, next_index):
+            return None
+        return self.get_task_connection_info(task_type, next_index)
     
     # ===================================================================
     # 内部方法：查找配置
@@ -181,6 +262,8 @@ class ProtocolManager:
     
     def _find_model(self, model_name: str) -> Optional[ModelConfig]:
         """查找模型配置"""
+        if not self._config:
+            return None
         for model in self._config.models:
             if model.name == model_name:
                 return model
@@ -188,10 +271,23 @@ class ProtocolManager:
     
     def _find_provider(self, provider_name: str) -> Optional[APIProviderConfig]:
         """查找供应商配置"""
+        if not self._config:
+            return None
         for provider in self._config.api_providers:
             if provider.name == provider_name:
                 return provider
         return None
+
+    def _get_task_config(self, task_type: str) -> Optional[TaskConfig]:
+        """获取任务配置"""
+        if not self._config or not self._config.model_task_config:
+            return None
+        return getattr(self._config.model_task_config, task_type, None)
+
+    def _is_valid_task_model_index(self, task_type: str, model_index: int) -> bool:
+        """检查任务模型索引是否有效"""
+        model_names = self.get_task_model_names(task_type)
+        return 0 <= model_index < len(model_names)
     
     # ===================================================================
     # 辅助方法

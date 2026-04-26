@@ -98,7 +98,52 @@ class Live2DConfig(BaseModel):
     """Live2D 配置"""
     enabled: bool = Field(False, description="是否启用 Live2D")
     model_path: Optional[str] = Field(None, description="模型路径")
+    model_name: Optional[str] = Field(None, description="模型名称")
+    physics_enabled: bool = Field(True, description="是否启用物理模拟")
+    render_quality: str = Field("high", description="渲染质量")
+    gpu_acceleration: bool = Field(True, description="是否启用 GPU 加速")
     custom_scale: float = Field(1.0, description="自定义缩放")
+    custom_offset_x: float = Field(0.0, description="自定义水平偏移")
+    custom_offset_y: float = Field(0.0, description="自定义垂直偏移")
+
+
+class RenderConfig(BaseModel):
+    """渲染配置"""
+    mode: str = Field("static", description="渲染模式: static/live2d")
+    allow_switch: bool = Field(True, description="是否允许运行时切换渲染模式")
+
+
+class AnimationConfig(BaseModel):
+    """动画配置"""
+    default_state: str = Field("idle", description="默认动画状态")
+    default_expression: str = Field("normal", description="默认表情")
+    fps: int = Field(60, description="动画帧率")
+    breathing_enabled: bool = Field(True, description="是否启用呼吸效果")
+
+
+class AnimationSchedulerConfig(BaseModel):
+    """动画调度器配置"""
+    enabled: bool = Field(True, description="是否启用动画调度器")
+    idle_interval_min: float = Field(30.0, description="待机动作最小间隔")
+    idle_interval_max: float = Field(90.0, description="待机动作最大间隔")
+    random_motion_duration: float = Field(5.0, description="随机动作持续时间")
+    group_weights: Dict[str, float] = Field(default_factory=dict, description="动作组权重")
+    whitelist: List[str] = Field(default_factory=list, description="动作组白名单")
+    blacklist: List[str] = Field(default_factory=list, description="动作组黑名单")
+
+
+class PerformanceConfig(BaseModel):
+    """性能配置"""
+    max_fps: int = Field(60, description="最大帧率限制")
+    vsync: bool = Field(True, description="是否启用垂直同步")
+    texture_cache_size: int = Field(256, description="纹理缓存大小 MB")
+
+
+class StateConfig(BaseModel):
+    """持久化状态配置"""
+    window_locked: bool = Field(False, description="窗口是否锁定")
+    window_visible: bool = Field(True, description="窗口是否可见")
+    console_visible: bool = Field(True, description="终端是否可见")
 
 
 class Config(BaseModel):
@@ -112,5 +157,10 @@ class Config(BaseModel):
     allow_multiple_source_conversion: bool = Field(False, description="允许多源转换")
     
     interface: Optional[InterfaceConfig] = Field(None, description="界面配置")
+    render: Optional[RenderConfig] = Field(None, description="渲染配置")
     database: Optional[DatabaseConfig] = Field(None, description="数据库配置")
     live2d: Optional[Live2DConfig] = Field(None, description="Live2D 配置")
+    animation: Optional[AnimationConfig] = Field(None, description="动画配置")
+    animation_scheduler: Optional[AnimationSchedulerConfig] = Field(None, description="动画调度器配置")
+    performance: Optional[PerformanceConfig] = Field(None, description="性能配置")
+    state: Optional[StateConfig] = Field(None, description="持久化状态配置")

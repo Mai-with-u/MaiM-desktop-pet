@@ -125,6 +125,7 @@ class DesktopPet(QWidget):
 
         # 初始化子系统
         self.init_subsystems()
+        self.chat_window_active = False
 
         # 初始化 UI
         self.init_ui()
@@ -453,6 +454,9 @@ class DesktopPet(QWidget):
     # 公开方法
     def show_message(self, text=None, msg_type: Literal["received", "sent"] = "received", pixmap=None):
         """显示消息"""
+        if self.is_chat_window_active():
+            logger.debug("聊天窗口已打开，跳过桌宠气泡显示")
+            return
         self.bubble_manager.show_message(text, msg_type, pixmap)
     
     def safe_quit(self):
@@ -476,10 +480,38 @@ class DesktopPet(QWidget):
     def handle_user_input(self, text):
         """处理用户输入（同步接口）"""
         logger.info(f"收到用户输入: {text}")
-        self.show_message(text=text, msg_type="sent")
-        
+        if self.is_chat_window_active():
+            try:
+                from src.frontend.chat_window import ChatWindow
+                chat_window = ChatWindow.get_instance(parent=None, pet_window=self)
+                chat_window.add_message(text=str(text), msg_type="sent")
+                chat_window.activateWindow()
+            except Exception as e:
+                logger.error(f"将桌宠输入同步到聊天窗口失败: {e}", exc_info=True)
+        else:
+            self.show_message(text=text, msg_type="sent")
+
         # 使用 qasync 事件循环，创建异步任务而不阻塞主线程
         asyncio.create_task(chat_manager.send_message(str(text)))
+
+    def set_chat_window_active(self, active: bool):
+        """切换聊天窗口独占对话展示模式。"""
+        if getattr(self, "chat_window_active", False) == active:
+            return
+
+        self.chat_window_active = active
+        if active:
+            if hasattr(self, 'bubble_input') and self.bubble_input:
+                self.bubble_input.hide()
+            if hasattr(self, 'chat_bubbles') and self.chat_bubbles:
+                self.chat_bubbles.clear_all()
+            logger.info("已切换到聊天窗口交互模式，桌宠气泡暂停显示")
+        else:
+            logger.info("已退出聊天窗口交互模式，桌宠气泡恢复显示")
+
+    def is_chat_window_active(self) -> bool:
+        """聊天窗口是否正在接管聊天展示。"""
+        return bool(getattr(self, "chat_window_active", False))
     
     def cleanup_resources(self):
         """清理所有资源（不包含退出逻辑）"""
@@ -744,7 +776,7 @@ class PetScreenshotSelector(ScreenshotSelector):
             
             # OCR 专用 prompt
             ocr_prompt = """请识别图片中的文字内容，只输出识别到的文字，不要添加任何解释或说明。"""
-            
+
             # 使用识图接口
             asyncio.create_task(chat_manager.recognize_image(
                 image_base64=image_base64,
@@ -780,7 +812,7 @@ class PetScreenshotSelector(ScreenshotSelector):
             
             # 显示"正在翻译"提示
             self.pet.show_message("正在翻译...", msg_type="received")
-            
+
             # 使用翻译接口
             asyncio.create_task(chat_manager.translate_image(
                 image_base64=image_base64,

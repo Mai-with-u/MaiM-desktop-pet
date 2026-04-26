@@ -20,13 +20,28 @@ class StreamToLogger:
     def __init__(self, logger, log_level=logging.INFO):
         self.logger = logger
         self.log_level = log_level
+        self._writing = False
 
     def write(self, message):
+        if self._writing:
+            return
         if message.strip():  # 忽略空行
-            self.logger.log(self.log_level, message.strip())
+            self._writing = True
+            try:
+                self.logger.log(self.log_level, message.strip())
+            except Exception:
+                pass
+            finally:
+                self._writing = False
 
     def flush(self):
         pass  # 不需要实现
+
+    def isatty(self):
+        return False
+
+    def fileno(self):
+        raise OSError("StreamToLogger does not expose a file descriptor")
 
 
 class LastRunHandler(logging.FileHandler):
@@ -57,6 +72,9 @@ class LastRunHandler(logging.FileHandler):
         
         在日志开头添加启动时间标记
         """
+        if self.stream is None:
+            self.stream = self._open()
+
         # 如果是第一条日志，添加启动时间标记
         if self.stream.tell() == 0:
             startup_banner = (
@@ -67,6 +85,20 @@ class LastRunHandler(logging.FileHandler):
             self.stream.write(startup_banner)
         
         super().emit(record)
+
+
+class SafeConsoleHandler(logging.StreamHandler):
+    """Console handler that tolerates Windows console encoding limits."""
+
+    def emit(self, record):
+        try:
+            msg = self.format(record) + self.terminator
+            encoding = getattr(self.stream, "encoding", None) or "utf-8"
+            safe_msg = msg.encode(encoding, errors="replace").decode(encoding, errors="replace")
+            self.stream.write(safe_msg)
+            self.flush()
+        except Exception:
+            pass
 
 
 def setup_logger():
@@ -103,7 +135,7 @@ def setup_logger():
     )
     
     # 1. 控制台 Handler（实时输出）
-    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler = SafeConsoleHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)  # 控制台只显示 INFO 及以上级别
     console_handler.setFormatter(simple_formatter)
     logger.addHandler(console_handler)
