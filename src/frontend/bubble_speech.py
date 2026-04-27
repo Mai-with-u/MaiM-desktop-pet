@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QLabel, QApplication
 from PyQt5.QtCore import Qt, QPropertyAnimation, QPoint, QSize, QRect, QSequentialAnimationGroup
-from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath, QPixmap, QImage
+from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath, QPixmap, QImage, QCursor
 
 from typing import Literal, Optional, TYPE_CHECKING
 import uuid
@@ -32,6 +32,8 @@ class SpeechBubble(QLabel):
         self.scaled_pixmap = None
         self.bubble_type = bubble_type  # "received" 或 "sent"
         self.on_click_callback = on_click  # 点击回调函数
+        if self.on_click_callback:
+            self.setCursor(QCursor(Qt.PointingHandCursor))
         
             # 添加边距和间距的初始化（应用缩放倍率）
         self._content_margin = int(10 * scale_factor)  # 内容与气泡边缘的边距
@@ -45,17 +47,21 @@ class SpeechBubble(QLabel):
         if bubble_type == "received":
             self.bg_color = QColor(240, 248, 255)  # 爱丽丝蓝(接收气泡)
             self.follow_offset = QPoint(int(-100 * scale_factor), int(-30 * scale_factor))   # 向左偏移
-        else:
+        elif bubble_type == "sent":
             self.bg_color = QColor(200, 255, 200)  # 浅绿色(发送气泡)
             self.follow_offset = QPoint(int(100 * scale_factor), int(-30 * scale_factor))    # 向右偏移
+        else:
+            self.bg_color = QColor(241, 241, 241)  # 系统提示
+            self.follow_offset = QPoint(0, int(-35 * scale_factor))
             
-        self.text_color = QColor(70, 70, 70)   # 深灰色
+        self.text_color = QColor(125, 125, 125) if bubble_type == "notice" else QColor(70, 70, 70)
         self.setFont(QFont("Arial", int(12 * scale_factor), QFont.Bold))
         self.corner_radius = int(10 * scale_factor)
-        self.arrow_height = int(10 * scale_factor)
+        self.arrow_height = 0 if bubble_type == "notice" else int(10 * scale_factor)
         
         # 字体设置
-        self.setFont(QFont("Microsoft YaHei", int(12 * scale_factor)))
+        font_size = 9 if bubble_type == "notice" else 12
+        self.setFont(QFont("Microsoft YaHei", int(font_size * scale_factor)))
         
         # 动画组
         self.animation_group = QSequentialAnimationGroup(self)
@@ -95,20 +101,21 @@ class SpeechBubble(QLabel):
         painter.setPen(Qt.NoPen)
         painter.drawRoundedRect(body_rect, self.corner_radius, self.corner_radius)
         
-        # 绘制箭头(根据气泡类型决定方向，应用缩放倍率)
-        path = QPainterPath()
-        arrow_width = int(20 * scale_factor)
-        if self.bubble_type == "received":
-            # 接收气泡箭头在左侧
-            center_x = int(30 * scale_factor)
-        else:
-            # 发送气泡箭头在右侧
-            center_x = self.width() - int(30 * scale_factor)
-            
-        path.moveTo(center_x - arrow_width//2, body_rect.height())
-        path.lineTo(center_x, self.height())
-        path.lineTo(center_x + arrow_width//2, body_rect.height())
-        painter.drawPath(path)
+        if self.bubble_type != "notice":
+            # 绘制箭头(根据气泡类型决定方向，应用缩放倍率)
+            path = QPainterPath()
+            arrow_width = int(20 * scale_factor)
+            if self.bubble_type == "received":
+                # 接收气泡箭头在左侧
+                center_x = int(30 * scale_factor)
+            else:
+                # 发送气泡箭头在右侧
+                center_x = self.width() - int(30 * scale_factor)
+
+            path.moveTo(center_x - arrow_width//2, body_rect.height())
+            path.lineTo(center_x, self.height())
+            path.lineTo(center_x + arrow_width//2, body_rect.height())
+            painter.drawPath(path)
         
         # 绘制内容（图片和/或文字，应用缩放倍率）
         content_top = int(5 * scale_factor)  # 顶部边距
@@ -135,8 +142,8 @@ class SpeechBubble(QLabel):
     def calculate_bubble_size(self):
         """计算包含图片和文字的气泡大小（应用缩放倍率）"""
         # 计算文字所需大小（应用缩放倍率）
-        min_text_width = int(100 * scale_factor)  # 最小文字宽度
-        text_width = int(300 * scale_factor)  # 最大文字宽度
+        min_text_width = int((80 if self.bubble_type == "notice" else 100) * scale_factor)
+        text_width = int((240 if self.bubble_type == "notice" else 300) * scale_factor)
         text_height = 0
         
         if self.text_data:
@@ -194,7 +201,15 @@ class SpeechBubble(QLabel):
     def mousePressEvent(self, event):
         """鼠标点击事件"""
         if event.button() == Qt.LeftButton and self.on_click_callback:
-            self.on_click_callback()
+            try:
+                self.on_click_callback(event)
+            except TypeError as event_error:
+                try:
+                    self.on_click_callback()
+                except TypeError:
+                    raise event_error
+            event.accept()
+            return
         super().mousePressEvent(event)
 
 
@@ -212,7 +227,8 @@ class SpeechBubbleList():
                   message: str | MessageBase = "",
                   msg_type: Literal["received", "sent"] = "received",
                   pixmap: Optional[QPixmap] = None,
-                  save_to_db: bool = True):
+                  save_to_db: bool = True,
+                  on_click=None):
         """添加新消息（可以是文字、图片、MessageBase对象或两者都有）
         
         参数:
@@ -243,18 +259,22 @@ class SpeechBubbleList():
             bubble_type=msg_type,
             text=text_content,
             pixmap=pixmap,
-            on_click=self.on_bubble_click
+            on_click=on_click or self.on_bubble_click
         )
         self._active_bubbles.append(new_bubble)
         new_bubble.show_message()
         self.update_position()
         
         # 异步保存到数据库（不阻塞UI）
-        if self.use_database and save_to_db:
+        if self.use_database and save_to_db and msg_type != "notice":
             if message_obj:
                 self._async_save(self._save_to_database(message_obj))
             else:
                 self._async_save(self._save_message_to_db(text_content, msg_type))
+
+    def add_notice(self, text: str, on_click=None):
+        """添加低调系统提示，不保存到聊天历史。"""
+        self.add_message(message=text, msg_type="notice", save_to_db=False, on_click=on_click)
     
     def _async_save(self, coro):
         """在后台线程中执行异步任务"""
@@ -415,10 +435,13 @@ class SpeechBubbleList():
                 # 接收气泡：左侧对齐(距中心160px左侧)
                 x_pos = max(screen_geo.left() + int(10 * scale_factor), 
                         center_x - int(160 * scale_factor) - bubble_width//2)
-            else:
+            elif bubble.bubble_type == "sent":
                 # 发送气泡：右侧对齐(距中心160px右侧)
                 x_pos = min(screen_geo.right() - bubble_width - int(10 * scale_factor),
                         center_x + int(160 * scale_factor) - bubble_width//2)
+            else:
+                # 系统提示居中显示
+                x_pos = center_x - bubble_width // 2
             
             # 计算垂直位置(从下往上排列)
             y_pos = base_y - total_height - bubble_height

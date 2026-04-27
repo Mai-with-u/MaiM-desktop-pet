@@ -146,6 +146,18 @@ class StateConfig(BaseModel):
     console_visible: bool = Field(True, description="终端是否可见")
 
 
+class PromptConfig(BaseModel):
+    """Prompt 拼接配置"""
+    persona: str = Field(
+        "你活泼、亲切，愿意陪伴用户。回复时尽量简短自然，可以有一点桌面宠物的可爱感，但不要影响信息表达。",
+        description="桌宠人设",
+    )
+    context_limit: int = Field(8, description="拼接最近上下文消息条数")
+    context_message_max_chars: int = Field(500, description="单条上下文最大字符数")
+    include_time: bool = Field(True, description="是否在 prompt 中拼接当前时间")
+    include_context: bool = Field(True, description="是否拼接最近聊天上下文")
+
+
 class Config(BaseModel):
     """主配置"""
     url: str = Field("ws://127.0.0.1:19000/ws", description="WebSocket 地址")
@@ -164,3 +176,4 @@ class Config(BaseModel):
     animation_scheduler: Optional[AnimationSchedulerConfig] = Field(None, description="动画调度器配置")
     performance: Optional[PerformanceConfig] = Field(None, description="性能配置")
     state: Optional[StateConfig] = Field(None, description="持久化状态配置")
+    prompt: Optional[PromptConfig] = Field(None, description="Prompt 拼接配置")

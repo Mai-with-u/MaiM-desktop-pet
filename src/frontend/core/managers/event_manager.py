@@ -89,6 +89,15 @@ class EventManager(QObject):
         self.bubble_manager = bubble_manager
         self.screenshot_manager = screenshot_manager
         self.hotkey_manager = hotkey_manager
+
+    def _show_notice(self, text: str):
+        """显示非聊天系统提示。"""
+        if hasattr(self.parent, "show_notice"):
+            self.parent.show_notice(text)
+        elif self.bubble_manager and hasattr(self.bubble_manager, "show_notice"):
+            self.bubble_manager.show_notice(text)
+        elif self.bubble_manager:
+            self.bubble_manager.show_message(text, msg_type="received")
     
     def handle_mouse_press(self, event):
         """
@@ -253,24 +262,28 @@ class EventManager(QObject):
             # 设置动画状态（如果支持）
             if self.render_manager:
                 self.render_manager.set_animation_state("happy")
+
+            self._show_notice("摸了摸头")
             
-            # 发送消息（使用线程执行，避免阻塞 Qt 事件循环）
-            import threading
+            # 发送消息（复用 qasync 主事件循环，避免跨线程/跨 loop 使用聊天管理器）
             import asyncio
             from src.core.chat import chat_manager
-            
-            def send_message_async():
-                """在新线程中执行消息发送"""
-                try:
-                    asyncio.run(chat_manager.send_message("(这是一个类似于摸摸头的友善动作)"))
-                except Exception as e:
-                    logger.error(f"发送消息失败: {e}")
-            
-            # 在后台线程中执行，不阻塞主线程
-            thread = threading.Thread(target=send_message_async, daemon=True)
-            thread.start()
+
+            try:
+                task = asyncio.create_task(chat_manager.send_message("(这是一个类似于摸摸头的友善动作)"))
+                task.add_done_callback(self._on_pat_head_sent)
+            except RuntimeError as e:
+                logger.error(f"摸摸头消息发送任务创建失败: {e}", exc_info=True)
         
         event.accept()
+
+    def _on_pat_head_sent(self, task):
+        """记录摸摸头消息发送结果。"""
+        try:
+            if not task.result():
+                logger.warning("摸摸头消息发送失败")
+        except Exception as e:
+            logger.error(f"摸摸头消息发送异常: {e}", exc_info=True)
     
     def show_context_menu(self, event):
         """
@@ -407,20 +420,11 @@ class EventManager(QObject):
             with open("config.toml", "w", encoding='utf-8') as f:
                 f.write(tomli_w.dumps(config_data))
             
-            # 显示提示
-            if self.bubble_manager:
-                self.bubble_manager.show_message(
-                    f"缩放已调整为 {new_scale}x，重启程序后生效",
-                    msg_type="received"
-                )
+            self._show_notice(f"缩放已调整为 {new_scale}x，重启程序后生效")
             
         except Exception as e:
             logger.error(f"修改缩放倍率失败: {e}")
-            if self.bubble_manager:
-                self.bubble_manager.show_message(
-                    f"修改缩放失败: {e}",
-                    msg_type="received"
-                )
+            self._show_notice(f"修改缩放失败: {e}")
     
     def switch_render_mode(self, mode: str):
         """切换渲染模式"""
@@ -428,18 +432,10 @@ class EventManager(QObject):
             try:
                 self.render_manager.switch_mode(mode)
                 mode_name = "静态图片" if mode == "static" else "Live2D"
-                if self.bubble_manager:
-                    self.bubble_manager.show_message(
-                        f"已切换到 {mode_name} 模式",
-                        msg_type="received"
-                    )
+                self._show_notice(f"已切换到 {mode_name} 模式")
             except Exception as e:
                 logger.error(f"切换渲染模式失败: {e}")
-                if self.bubble_manager:
-                    self.bubble_manager.show_message(
-                        f"切换模式失败: {e}",
-                        msg_type="received"
-                    )
+                self._show_notice(f"切换模式失败: {e}")
     
     def start_move_worker(self):
         """启动移动工作线程"""

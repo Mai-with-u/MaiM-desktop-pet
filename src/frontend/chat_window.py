@@ -230,7 +230,17 @@ class ChatWindow(QWidget):
         """向聊天窗口添加一条消息。"""
         if not text:
             return
+        if msg_type in ("notice", "system", "status"):
+            self.add_notice(text)
+            return
         self.bubble_list.add_message(text=text, msg_type=msg_type)
+        self._scroll_to_bottom()
+
+    def add_notice(self, text: str, on_click=None):
+        """向聊天窗口添加一条低调系统提示。"""
+        if not text:
+            return
+        self.bubble_list.add_notice(text=text, on_click=on_click)
         self._scroll_to_bottom()
 
     def _send_message(self):

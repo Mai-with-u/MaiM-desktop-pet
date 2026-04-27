@@ -7,9 +7,9 @@ import asyncio
 import atexit
 import random
 import logging
-from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QShortcut
+from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QShortcut, QLabel
 from PyQt5.QtCore import Qt, QTimer, QPoint
-from PyQt5.QtGui import QIcon, QKeySequence, QClipboard
+from PyQt5.QtGui import QIcon, QKeySequence, QCursor
 
 from src.core.chat import chat_manager
 from src.core.thread_manager import thread_manager
@@ -256,7 +256,7 @@ class DesktopPet(QWidget):
 
         logger.info("子系统初始化完成")
 
-    def _on_bubble_click(self):
+    def _on_bubble_click(self, event=None):
         """气泡点击回调，打开聊天窗口"""
         from src.frontend.chat_window import ChatWindow
         ChatWindow.show_chat_window(parent=None, pet_window=self)
@@ -300,7 +300,7 @@ class DesktopPet(QWidget):
         # 如果配置中要求隐藏终端
         if config and config.hide_console:
             self.state_manager.hide_console()
-            self.show_message("终端藏在托盘栏咯，进入托盘栏打开叭")
+            self.show_notice("终端藏在托盘栏咯，进入托盘栏打开叭")
 
         logger.info("托盘图标初始化完成")
     
@@ -458,6 +458,61 @@ class DesktopPet(QWidget):
             logger.debug("聊天窗口已打开，跳过桌宠气泡显示")
             return
         self.bubble_manager.show_message(text, msg_type, pixmap)
+
+    def show_notice(self, text: str, on_click=None):
+        """显示非聊天系统提示。"""
+        if not text:
+            return
+        if self.is_chat_window_active():
+            try:
+                from src.frontend.chat_window import ChatWindow
+                chat_window = ChatWindow.get_instance(parent=None, pet_window=self)
+                chat_window.add_notice(str(text), on_click=on_click)
+                return
+            except Exception as e:
+                logger.error(f"将系统提示同步到聊天窗口失败: {e}", exc_info=True)
+
+        self.bubble_manager.show_notice(str(text), on_click=on_click)
+
+    def show_click_feedback(self, text: str, event=None):
+        """在点击位置附近显示一个短暂的轻提示。"""
+        if not text:
+            return
+        try:
+            global_pos = event.globalPos() if event is not None and hasattr(event, "globalPos") else QCursor.pos()
+            popup = QLabel(text)
+            popup.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+            popup.setAttribute(Qt.WA_TranslucentBackground, True)
+            popup.setStyleSheet(f"""
+                QLabel {{
+                    color: #666666;
+                    background-color: rgba(245, 245, 245, 235);
+                    border: 1px solid #dddddd;
+                    border-radius: {int(8 * scale_factor)}px;
+                    padding: {int(5 * scale_factor)}px {int(10 * scale_factor)}px;
+                }}
+            """)
+            popup.adjustSize()
+            popup.move(global_pos + QPoint(int(10 * scale_factor), -popup.height() - int(10 * scale_factor)))
+
+            popups = getattr(self, "_click_feedback_popups", None)
+            if popups is None:
+                self._click_feedback_popups = []
+                popups = self._click_feedback_popups
+            popups.append(popup)
+
+            def cleanup():
+                try:
+                    popup.hide()
+                    popup.deleteLater()
+                finally:
+                    if popup in popups:
+                        popups.remove(popup)
+
+            popup.show()
+            QTimer.singleShot(1200, cleanup)
+        except Exception as e:
+            logger.error(f"显示点击反馈失败: {e}", exc_info=True)
     
     def safe_quit(self):
         """安全退出 - 使用 Qt 的方式退出"""
@@ -602,7 +657,7 @@ class DesktopPet(QWidget):
             self.is_peeking = True
             random_time = random.randint(10, 30)
             self.peek_timer.start(random_time * 1000)
-            self.show_message("开始窥屏啦~", msg_type="received")
+            self.show_notice("开始窥屏")
         else:
             self.stop_peeking()
     
@@ -611,7 +666,7 @@ class DesktopPet(QWidget):
         if self.is_peeking:
             self.is_peeking = False
             self.peek_timer.stop()
-            self.show_message("停止窥屏啦~", msg_type="received")
+            self.show_notice("停止窥屏")
     
     def _on_peek_timer(self):
         """窥屏定时器触发"""
@@ -639,6 +694,12 @@ class BubbleManager:
         if self.chat_bubbles:
             self.chat_bubbles.add_message(text, msg_type, pixmap)
             QTimer.singleShot(25000, self.del_first_msg)
+
+    def show_notice(self, text: str, on_click=None):
+        """显示非聊天系统提示。"""
+        if self.chat_bubbles:
+            self.chat_bubbles.add_notice(text, on_click=on_click)
+            QTimer.singleShot(8000, self.del_first_msg)
     
     def del_first_msg(self):
         """删除第一条消息"""
@@ -772,7 +833,7 @@ class PetScreenshotSelector(ScreenshotSelector):
             logger.info("截图窗口已关闭")
             
             # 显示"正在识别"提示
-            self.pet.show_message("正在识别文字...", msg_type="received")
+            self.pet.show_notice("正在识别文字...")
             
             # OCR 专用 prompt
             ocr_prompt = """请识别图片中的文字内容，只输出识别到的文字，不要添加任何解释或说明。"""
@@ -786,7 +847,7 @@ class PetScreenshotSelector(ScreenshotSelector):
             
         except Exception as e:
             logger.error(f"OCR识别失败: {e}", exc_info=True)
-            self.pet.show_message("OCR识别失败，请重试", msg_type="received")
+            self.pet.show_notice("OCR识别失败，请重试")
     
 
     def _on_translate_triggered(self):
@@ -811,7 +872,7 @@ class PetScreenshotSelector(ScreenshotSelector):
             logger.info("截图窗口已关闭")
             
             # 显示"正在翻译"提示
-            self.pet.show_message("正在翻译...", msg_type="received")
+            self.pet.show_notice("正在翻译...")
 
             # 使用翻译接口
             asyncio.create_task(chat_manager.translate_image(
@@ -821,7 +882,7 @@ class PetScreenshotSelector(ScreenshotSelector):
             
         except Exception as e:
             logger.error(f"翻译失败: {e}", exc_info=True)
-            self.pet.show_message("翻译失败，请重试", msg_type="received")
+            self.pet.show_notice("翻译失败，请重试")
 
     def ocr_callback(self, success: bool, task_type: str, response: str = None):
         """OCR 结果回调
@@ -833,19 +894,23 @@ class PetScreenshotSelector(ScreenshotSelector):
         """
         logger.info(f"OCR回调收到结果，成功: {success}, 任务类型: {task_type},response: {response}")
         if success and response:
-            self.pet.show_message(response, msg_type="received")
             logger.info(f"OCR识别结果: {response}")
-            
-            # 将识别结果写入剪贴板
-            try:
-                clipboard = QApplication.clipboard()
-                clipboard.setText(response)
-                logger.info("OCR识别结果已复制到剪贴板")
-                self.pet.show_message("识别结果已复制到剪贴板", msg_type="received")
-            except Exception as e:
-                logger.error(f"写入剪贴板失败: {e}", exc_info=True)
+            title = "【翻译结果】" if task_type == "translation" else "【识别结果】"
+            notice_text = f"{title}\n{response}"
+
+            def copy_result(event=None, result=response):
+                try:
+                    clipboard = QApplication.clipboard()
+                    clipboard.setText(result)
+                    logger.info("识别结果已复制到剪贴板")
+                    self.pet.show_click_feedback("已复制到剪贴板", event)
+                except Exception as e:
+                    logger.error(f"写入剪贴板失败: {e}", exc_info=True)
+                    self.pet.show_notice("复制失败")
+
+            self.pet.show_notice(notice_text, on_click=copy_result)
         else:
-            self.pet.show_message("OCR识别失败", msg_type="received")
+            self.pet.show_notice("OCR识别失败")
 
     
     def closeEvent(self, event):

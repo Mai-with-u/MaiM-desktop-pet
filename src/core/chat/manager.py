@@ -408,6 +408,23 @@ class ChatManager:
                 logger.error(f"发送消息失败: {e}", exc_info=True)
                 return False
     
+    async def _load_prompt_context(self, limit: int) -> List[Dict[str, Any]]:
+        """读取最近聊天记录，供 OpenAI 兼容请求拼接上下文。"""
+        if limit <= 0:
+            return []
+
+        try:
+            from src.database import db_manager
+
+            if not db_manager.is_initialized():
+                return []
+
+            messages = await db_manager.get_messages(limit=limit, offset=0)
+            return list(reversed(messages))
+        except Exception as e:
+            logger.warning(f"读取 prompt 上下文失败，继续无上下文请求: {e}")
+            return []
+
     async def _send_http(self, content: str, connection_info: Dict[str, Any], user_id: str, user_name: str) -> bool:
         """
         通过 HTTP 发送消息（每次请求临时创建 session）
@@ -432,8 +449,15 @@ class ChatManager:
                 "Content-Type": "application/json"
             }
 
-            # 使用 prompt_manager 构建消息列表（包含人设信息）
-            messages = prompt_manager.build_messages(content, user_id, user_name)
+            context_limit = prompt_manager.get_context_limit()
+            context_fetch_limit = context_limit + 2 if context_limit > 0 else 0
+            context_messages = await self._load_prompt_context(context_fetch_limit)
+            messages = prompt_manager.build_messages(
+                content,
+                user_id,
+                user_name,
+                context_messages=context_messages,
+            )
 
             model_identifier = connection_info.get('model_identifier', '')
             if not model_identifier:

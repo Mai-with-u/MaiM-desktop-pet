@@ -5,7 +5,7 @@
 
 from PyQt5.QtWidgets import QWidget, QLabel, QHBoxLayout, QVBoxLayout, QSizePolicy
 from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath, QPen, QFontMetrics, QPixmap
+from PyQt5.QtGui import QPainter, QColor, QFont, QPainterPath, QPen, QFontMetrics, QPixmap, QCursor
 from typing import Literal, Optional
 from config import load_config, get_scale_factor
 
@@ -141,6 +141,60 @@ class ChatBubble(QWidget):
             painter.drawText(content_rect, Qt.TextWordWrap, self.text_content)
 
 
+class ChatNotice(QWidget):
+    """聊天窗口中的低调系统提示。"""
+
+    def __init__(self, parent=None, text: str = "", on_click=None):
+        super().__init__(parent)
+        self.on_click = on_click
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, int(6 * scale_factor), 0, int(6 * scale_factor))
+        layout.setSpacing(0)
+
+        self.label = QLabel(text, self)
+        self.label.setObjectName("chat_notice_label")
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setWordWrap(True)
+        self.label.setMaximumWidth(int(280 * scale_factor))
+        self.label.setFont(QFont("Microsoft YaHei", int(9 * scale_factor)))
+        self.label.setStyleSheet(f"""
+            QLabel#chat_notice_label {{
+                color: #8a8a8a;
+                background-color: #f1f1f1;
+                border: 1px solid #e5e5e5;
+                border-radius: {int(9 * scale_factor)}px;
+                padding: {int(3 * scale_factor)}px {int(9 * scale_factor)}px;
+            }}
+        """)
+
+        layout.addStretch()
+        layout.addWidget(self.label)
+        layout.addStretch()
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        if self.on_click:
+            self.setCursor(QCursor(Qt.PointingHandCursor))
+            self.label.setCursor(QCursor(Qt.PointingHandCursor))
+            self.label.mousePressEvent = self._handle_mouse_press
+
+    def _handle_mouse_press(self, event):
+        if event.button() == Qt.LeftButton and self.on_click:
+            try:
+                self.on_click(event)
+            except TypeError as event_error:
+                try:
+                    self.on_click()
+                except TypeError:
+                    raise event_error
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mousePressEvent(self, event):
+        self._handle_mouse_press(event)
+
+
 class ChatBubbleContainer(QWidget):
     """气泡容器，用于对齐气泡（左或右）"""
 
@@ -179,7 +233,7 @@ class ChatBubbleList(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self._bubbles: list[ChatBubbleContainer] = []
+        self._bubbles: list[QWidget] = []
 
         # 主布局（垂直排列）
         self._layout = QVBoxLayout(self)
@@ -196,6 +250,14 @@ class ChatBubbleList(QWidget):
 
         self._bubbles.append(container)
         self._layout.insertWidget(self._layout.count() - 1, container)  # 在 stretch 之前插入
+
+    def add_notice(self, text: str, on_click=None):
+        """添加低调系统提示，不作为聊天消息显示。"""
+        if not text:
+            return
+        notice = ChatNotice(self, text=text, on_click=on_click)
+        self._bubbles.append(notice)
+        self._layout.insertWidget(self._layout.count() - 1, notice)
 
     def clear_all(self):
         """清空所有消息"""
