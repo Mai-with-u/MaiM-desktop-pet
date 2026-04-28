@@ -113,6 +113,7 @@ class DesktopPet(QWidget):
         global config, scale_factor
         config = _get_config()
         scale_factor = _get_scale_factor()
+        self._last_live2d_canvas_size = None
 
         # 初始化窗口
         self.init_window()
@@ -271,6 +272,53 @@ class DesktopPet(QWidget):
         self.render_manager.attach_to(self.render_container)
         
         logger.info("UI 初始化完成")
+
+    def adjust_to_live2d_canvas_size(self, canvas_width: float, canvas_height: float):
+        """根据 Live2D 模型画布比例调整桌宠窗口大小。"""
+        try:
+            canvas_width = float(canvas_width)
+            canvas_height = float(canvas_height)
+        except (TypeError, ValueError):
+            return
+
+        if canvas_width <= 0 or canvas_height <= 0:
+            return
+
+        canvas_size = (round(canvas_width, 2), round(canvas_height, 2))
+        if self._last_live2d_canvas_size == canvas_size:
+            return
+        self._last_live2d_canvas_size = canvas_size
+
+        max_width = int(400 * scale_factor)
+        max_height = int(600 * scale_factor)
+        min_width = int(180 * scale_factor)
+        min_height = int(180 * scale_factor)
+
+        fit_scale = min(max_width / canvas_width, max_height / canvas_height)
+        target_width = max(min_width, int(round(canvas_width * fit_scale)))
+        target_height = max(min_height, int(round(canvas_height * fit_scale)))
+
+        if abs(target_width - self.width()) <= 2 and abs(target_height - self.height()) <= 2:
+            return
+
+        old_bottom_right = self.geometry().bottomRight()
+        self.setFixedSize(target_width, target_height)
+
+        if hasattr(self, "render_container") and self.render_container:
+            self.render_container.setGeometry(0, 0, target_width, target_height)
+
+        self.move(
+            old_bottom_right.x() - target_width + 1,
+            old_bottom_right.y() - target_height + 1
+        )
+
+        if hasattr(self, "chat_bubbles") and self.chat_bubbles:
+            self.chat_bubbles.update_position()
+
+        logger.info(
+            f"根据 Live2D 画布调整桌宠窗口: "
+            f"canvas={canvas_width}x{canvas_height}, window={target_width}x{target_height}"
+        )
     
     def init_tray_icon(self):
         """初始化系统托盘图标"""

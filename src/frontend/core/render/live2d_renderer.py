@@ -529,6 +529,7 @@ class Live2DWidget(QOpenGLWidget):
         self.model = Model()
         self.model.LoadModelJson(self.model_path)
         self.model.CreateRenderer()
+        self._notify_parent_canvas_size()
         
         # 设置模型显示位置和大小
         # 使用自定义缩放或默认值
@@ -556,6 +557,81 @@ class Live2DWidget(QOpenGLWidget):
         
         self.initialized = True
         logger.info("Live2D 模型初始化成功")
+
+    def _notify_parent_canvas_size(self):
+        """把 Live2D 模型画布尺寸通知给桌宠窗口，用于动态调整窗口大小。"""
+        try:
+            canvas_size = self._get_model_canvas_size()
+            if not canvas_size:
+                return
+
+            canvas_width, canvas_height = canvas_size
+            render_container = self.parent()
+            pet_window = render_container.parent() if render_container else None
+            if not pet_window or not hasattr(pet_window, "adjust_to_live2d_canvas_size"):
+                return
+
+            QTimer.singleShot(
+                0,
+                lambda: pet_window.adjust_to_live2d_canvas_size(canvas_width, canvas_height)
+            )
+        except Exception as e:
+            logger.warning(f"通知 Live2D 画布尺寸失败: {e}")
+
+    def _get_model_canvas_size(self):
+        """优先读取像素画布尺寸，失败时读取逻辑画布尺寸。"""
+        for method_name in ("GetCanvasSizePixel", "GetCanvasSize"):
+            try:
+                method = getattr(self.model, method_name, None)
+                if not method:
+                    continue
+                canvas_size = method()
+                parsed = self._parse_canvas_size(canvas_size)
+                if parsed:
+                    logger.info(f"读取 Live2D 画布尺寸: {method_name}={parsed[0]}x{parsed[1]}")
+                    return parsed
+            except Exception as e:
+                logger.debug(f"读取 Live2D 画布尺寸失败 {method_name}: {e}")
+        return None
+
+    def _parse_canvas_size(self, canvas_size):
+        """兼容 live2d-py 可能返回的 tuple/list/对象格式。"""
+        if canvas_size is None:
+            return None
+
+        if isinstance(canvas_size, (tuple, list)) and len(canvas_size) >= 2:
+            width, height = canvas_size[0], canvas_size[1]
+        else:
+            width = (
+                getattr(canvas_size, "width", None)
+                or getattr(canvas_size, "Width", None)
+                or getattr(canvas_size, "w", None)
+                or getattr(canvas_size, "W", None)
+                or getattr(canvas_size, "x", None)
+                or getattr(canvas_size, "X", None)
+            )
+            height = (
+                getattr(canvas_size, "height", None)
+                or getattr(canvas_size, "Height", None)
+                or getattr(canvas_size, "h", None)
+                or getattr(canvas_size, "H", None)
+                or getattr(canvas_size, "y", None)
+                or getattr(canvas_size, "Y", None)
+            )
+            if callable(width):
+                width = width()
+            if callable(height):
+                height = height()
+
+        try:
+            width = float(width)
+            height = float(height)
+        except (TypeError, ValueError):
+            return None
+
+        if width <= 0 or height <= 0:
+            return None
+        return width, height
     
     def paintGL(self):
         """绘制场景"""

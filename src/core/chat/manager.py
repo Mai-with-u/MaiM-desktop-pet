@@ -1008,9 +1008,13 @@ class ChatManager:
                         # Vision 接收日志
                         logger.info(f"[Vision接收] {reply[:50]}")
 
-                        # 调用回调函数
+                        # 有回调的 Vision 任务（OCR/翻译）由调用方决定如何展示；
+                        # 没有回调的图文聊天则走统一消息信号，显示到聊天 UI。
                         if callback:
                             callback(True, task_type, reply)
+                        else:
+                            from src.frontend.signals import signals_bus
+                            _safe_emit_signal(signals_bus, 'message_received', reply)
 
                         return True
                     else:
